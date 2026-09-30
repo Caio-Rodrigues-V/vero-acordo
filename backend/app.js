@@ -967,9 +967,52 @@ app.post('/api/campaigns/:id/recalculate-stats', (req, res) => {
 app.delete('/api/campaigns/:id', (req, res) => {
   const { id } = req.params;
   try {
+    run('DELETE FROM leads WHERE campaign_id = ?', [id]);
     run('DELETE FROM campaigns WHERE id = ?', [id]);
-    res.json({ success: true, message: 'Campanha excluída com sucesso.' });
+    console.log(`[SERVER] Campanha #${id} e seus leads foram excluídos com sucesso.`);
+    res.json({ success: true, message: 'Campanha e todos os leads excluídos com sucesso.' });
   } catch (error) {
+    console.error('[DELETE CAMPAIGN ERROR]', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Rediscar para a mesma campanha (reenfileira contatos não atendidos ou todos)
+ */
+app.post('/api/campaigns/:id/redial', (req, res) => {
+  const { id } = req.params;
+  const { mode = 'unanswered' } = req.body || {};
+  try {
+    const campaign = get('SELECT id, name FROM campaigns WHERE id = ?', [id]);
+    if (!campaign) {
+      return res.status(404).json({ error: 'Campanha não encontrada.' });
+    }
+
+    if (mode === 'all') {
+      run("UPDATE leads SET call_status = 'pending', call_log = 'Reenfileirado para rediscagem total' WHERE campaign_id = ?", [id]);
+    } else {
+      run(
+        `UPDATE leads 
+         SET call_status = 'pending', call_log = 'Reenfileirado para rediscagem' 
+         WHERE campaign_id = ? 
+           AND (call_status != 'completed' OR call_status IS NULL)`,
+        [id]
+      );
+    }
+
+    run("UPDATE campaigns SET status = 'processing' WHERE id = ?", [id]);
+
+    const { triggerCampaignProcessor } = require('./services/campaignExecutor.js');
+    triggerCampaignProcessor(Number(id));
+
+    console.log(`[SERVER] Campanha #${id} (${campaign.name}) foi reenfileirada para rediscagem (modo: ${mode}).`);
+    res.json({
+      success: true,
+      message: 'Contatos reenfileirados para discagem com sucesso! Discador iniciado.'
+    });
+  } catch (error) {
+    console.error('[REDIAL ERROR]', error);
     res.status(500).json({ error: error.message });
   }
 });

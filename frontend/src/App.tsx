@@ -16,7 +16,9 @@ import {
   Upload,
   Calendar,
   PhoneCall,
-  Volume2
+  Volume2,
+  RotateCcw,
+  Trash2
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -439,6 +441,52 @@ export default function App() {
     }
   };
 
+  const handleRedialCampaign = async (id: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm('Deseja rediscar para todos os contatos não atendidos desta campanha?')) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/campaigns/${id}/redial`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'unanswered' })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        fetchCampaigns();
+        fetchStats(selectedCampaignId, selectedDate);
+        fetchHourlyStats(selectedCampaignId, startHour, endHour, selectedDate);
+      } else {
+        alert(data.error || 'Erro ao solicitar rediscagem.');
+      }
+    } catch (err) {
+      console.error('Error redialing campaign:', err);
+      alert('Erro de conexão ao solicitar rediscagem.');
+    }
+  };
+
+  const handleDeleteCampaign = async (id: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm('Tem certeza que deseja excluir esta campanha e todos os seus contatos? Esta ação não pode ser desfeita.')) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/campaigns/${id}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (selectedCampaignId === id) {
+          setSelectedCampaignId('all');
+          fetchStats('all', selectedDate);
+        }
+        fetchCampaigns();
+      } else {
+        alert(data.error || 'Erro ao excluir campanha.');
+      }
+    } catch (err) {
+      console.error('Error deleting campaign:', err);
+      alert('Erro de conexão ao excluir campanha.');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-800 antialiased">
       {/* Top Navbar */}
@@ -761,7 +809,7 @@ export default function App() {
                             onClick={() => handleCancelCampaign(activeCampaign.id)}
                             className="px-3 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 rounded-lg text-xs font-semibold hover:bg-amber-100 transition flex items-center gap-1.5"
                           >
-                            ⏸️ Pausar Discagem
+                            ⏸️ Pausar
                           </button>
                         ) : (
                           <button 
@@ -769,9 +817,17 @@ export default function App() {
                             className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition flex items-center gap-1.5"
                           >
                             <Play size={13} />
-                            {activeCampaign.status === 'pending' ? 'Iniciar Discagem' : 'Continuar Discagem'}
+                            {activeCampaign.status === 'pending' ? 'Iniciar' : 'Continuar'}
                           </button>
                         )}
+                        <button 
+                          onClick={(e) => handleRedialCampaign(activeCampaign.id, e)}
+                          className="px-3 py-1.5 border border-blue-200 text-blue-700 bg-blue-50 rounded-lg text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1.5"
+                          title="Rediscar contatos não atendidos desta campanha"
+                        >
+                          <RotateCcw size={13} />
+                          Rediscar
+                        </button>
                         <a 
                           href={`${BACKEND_URL}/api/campaigns/${activeCampaign.id}/export?filter=answered`}
                           className="px-3 py-1.5 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 transition flex items-center gap-1.5"
@@ -779,6 +835,13 @@ export default function App() {
                           <Download size={13} />
                           Exportar Atendidas
                         </a>
+                        <button 
+                          onClick={(e) => handleDeleteCampaign(activeCampaign.id, e)}
+                          className="p-1.5 border border-rose-200 text-rose-600 bg-rose-50 rounded-lg text-xs font-semibold hover:bg-rose-100 transition flex items-center gap-1"
+                          title="Excluir campanha e todos os seus leads"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -990,6 +1053,7 @@ export default function App() {
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleCancelCampaign(c.id); }}
                                 className="px-3 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 rounded-lg text-xs font-semibold hover:bg-amber-100 transition"
+                                title="Pausar discagem"
                               >
                                 Pausar
                               </button>
@@ -997,10 +1061,25 @@ export default function App() {
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleStartCampaign(c.id); }}
                                 className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition flex items-center gap-1"
+                                title="Iniciar ou continuar discagem"
                               >
-                                <Play size={12} /> Continuar
+                                <Play size={12} /> {c.status === 'pending' ? 'Iniciar' : 'Continuar'}
                               </button>
                             )}
+                            <button 
+                              onClick={(e) => handleRedialCampaign(c.id, e)}
+                              className="px-2.5 py-1.5 border border-blue-200 text-blue-700 bg-blue-50 rounded-lg text-xs font-semibold hover:bg-blue-100 transition flex items-center gap-1"
+                              title="Rediscar contatos não atendidos desta campanha"
+                            >
+                              <RotateCcw size={12} /> Rediscar
+                            </button>
+                            <button 
+                              onClick={(e) => handleDeleteCampaign(c.id, e)}
+                              className="p-1.5 border border-rose-200 text-rose-600 bg-rose-50 rounded-lg text-xs font-semibold hover:bg-rose-100 transition flex items-center justify-center"
+                              title="Excluir campanha e todos os seus leads"
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </div>
                         </div>
                       );
