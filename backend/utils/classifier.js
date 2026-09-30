@@ -104,52 +104,30 @@ function classifyCallOccurrence({ endedReason, summary, transcript, duration, ta
     return 'CAIXA POSTAL';
   }
 
-  // 3. Tabulações de sucesso com duração > 0
-  if (tab === 'PROMESSA_DE_PAGAMENTO' || tab.includes('PROMESSA')) {
-    return 'PROMESSA DE PAGAMENTO - SMS ENVIADO';
+  // 3. Tabulações retornadas pela IA
+  if (tabulation && typeof tabulation === 'string' && tabulation.trim().length > 0) {
+    const cleanTab = tabulation.replace(/_/g, ' ').trim().toUpperCase();
+    return cleanTab;
   }
-  if (tab === '2 VIA DE BOLETO' || tab === '2_VIA_DE_BOLETO' || tab.includes('2 VIA') || tab.includes('BOLETO')) {
-    return '2ª VIA BOLETO - SMS ENVIADO';
-  }
-  if (tab === 'ALEGA_PAGAMENTO' || tab.includes('ALEGA')) {
-    return 'ALEGA PAGAMENTO - SMS ENVIADO';
-  }
-  if (tab === 'DESCONHECE DIVIDA' || tab === 'DESCONHECE_DIVIDA' || tab.includes('DESCONHECE')) {
-    return 'DESCONHECE DÍVIDA';
-  }
-  if (tab === 'RECUSA DE PAGAMENTO' || tab === 'RECUSA_DE_PAGAMENTO' || tab.includes('RECUSA')) {
-    return 'RECUSA DE PAGAMENTO';
-  }
+
   if (
-    tab.includes('ATENDEU E DESLIGOU') || 
-    tab.includes('ATENDEU_E_DESLIGOU') || 
-    tab.includes('DESLIGOU') || 
-    tab.includes('DESLIGA') || 
+    reason === 'silence-timed-out' || 
+    reason === 'silence' ||
+    code === 'MUTE_SILENCE'
+  ) {
+    return 'LIGAÇÃO MUDA';
+  }
+
+  if (
     code === 'CALL_DROPPED' ||
     reason === 'customer-ended-call' ||
     reason === 'user_hangup'
   ) {
     return 'ATENDEU E DESLIGOU';
   }
-  if (
-    tab.includes('LIGACAO_MUDA') || 
-    tab.includes('LIGACAO MUDA') || 
-    tab.includes('MUD') || 
-    tab.includes('SEM SOM') || 
-    tab.includes('SEM_SOM') || 
-    tab.includes('SILENCIO') || 
-    code === 'MUTE_SILENCE' || 
-    reason === 'silence-timed-out' || 
-    reason === 'silence'
-  ) {
-    return 'LIGAÇÃO MUDA';
-  }
-  if (tab === 'ENGANO' || tab === 'NUMERO_DE_ENGANO' || code === 'WRONG_NUMBER') {
-    return 'NÚMERO DE ENGANO';
-  }
 
-  // 4. Qualquer chamada com duração > 0 conectada/atendida padrão
-  return 'ATENDEU - SMS ENVIADO';
+  // 4. Qualquer chamada conectada com duração > 0
+  return 'ATENDIDA';
 }
 
 /**
@@ -217,12 +195,13 @@ function cleanTranscript(text) {
     cleaned = realLines.join('\n').trim();
   }
 
-  // Normalizar nomes de agentes para Vero / Cliente
+  // Normalizar nomes de agentes para Agente / Cliente
   cleaned = cleaned
-    .replace(/^Sofia:/gm, 'Vero:')
-    .replace(/^Verô:/gm, 'Vero:')
-    .replace(/^Assistente:/gm, 'Vero:')
-    .replace(/^Bot:/gm, 'Vero:')
+    .replace(/^Sofia:/gm, 'Agente:')
+    .replace(/^Vero:/gm, 'Agente:')
+    .replace(/^Verô:/gm, 'Agente:')
+    .replace(/^Assistente:/gm, 'Agente:')
+    .replace(/^Bot:/gm, 'Agente:')
     .replace(/^User:/gm, 'Cliente:')
     .replace(/^Customer:/gm, 'Cliente:');
 

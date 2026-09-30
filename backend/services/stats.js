@@ -13,10 +13,8 @@ function updateCampaignStats(campaignId) {
     const stats = get(`
       SELECT 
         COUNT(id) as total,
-        SUM(CASE WHEN call_status = 'completed' OR (occurrence LIKE 'ATENDEU%' AND occurrence NOT LIKE '%NÃO%') OR occurrence LIKE '%LIGAÇÃO MUDA%' OR occurrence LIKE '%PROMESSA%' THEN 1 ELSE 0 END) as successful_calls,
-        SUM(CASE WHEN call_status = 'failed' OR occurrence LIKE '%NÃO ATENDEU%' THEN 1 ELSE 0 END) as failed_calls,
-        SUM(CASE WHEN sms_status = 'completed' THEN 1 ELSE 0 END) as successful_sms,
-        SUM(CASE WHEN sms_status = 'failed' THEN 1 ELSE 0 END) as failed_sms,
+        SUM(CASE WHEN call_status = 'completed' THEN 1 ELSE 0 END) as successful_calls,
+        SUM(CASE WHEN call_status = 'failed' THEN 1 ELSE 0 END) as failed_calls,
         SUM(CASE WHEN call_status IN ('completed', 'failed') THEN 1 ELSE 0 END) as processed
       FROM leads
       WHERE campaign_id = ?
@@ -27,16 +25,12 @@ function updateCampaignStats(campaignId) {
       SET processed_leads = ?,
           successful_calls = ?,
           failed_calls = ?,
-          successful_sms = ?,
-          failed_sms = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `, [
       stats ? (stats.processed || 0) : 0,
       stats ? (stats.successful_calls || 0) : 0,
       stats ? (stats.failed_calls || 0) : 0,
-      stats ? (stats.successful_sms || 0) : 0,
-      stats ? (stats.failed_sms || 0) : 0,
       campaignId
     ]);
 

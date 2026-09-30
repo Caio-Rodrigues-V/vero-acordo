@@ -7,16 +7,16 @@ import {
   AlertTriangle, 
   Download, 
   RefreshCw, 
-  Trash2, 
   Search, 
   ChevronLeft, 
   ChevronRight,
   MessageSquare,
   X,
-  Filter,
   BarChart2,
   Upload,
-  Calendar
+  Calendar,
+  PhoneCall,
+  Volume2
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
@@ -41,8 +41,6 @@ interface Campaign {
   processed_leads: number;
   successful_calls: number;
   failed_calls: number;
-  successful_sms: number;
-  failed_sms: number;
   created_at: string;
 }
 
@@ -51,18 +49,14 @@ interface Lead {
   campaign_id: number;
   name: string;
   phone: string;
-  email?: string;
-  debt_value: number;
-  due_date: string;
+  cpf?: string;
+  debt_value?: number;
+  due_date?: string;
   occurrence?: string;
   call_status: 'pending' | 'processing' | 'calling' | 'completed' | 'failed';
   call_attempts: number;
   call_duration?: number;
-  call_log: string;
-  sms_status: 'pending' | 'processing' | 'sending' | 'completed' | 'failed';
-  sms_log: string;
-  email_status?: 'pending' | 'processing' | 'sending' | 'completed' | 'failed';
-  email_log?: string;
+  call_log?: string;
   transcript?: string;
   recording_url?: string;
   call_id?: string;
@@ -75,11 +69,6 @@ interface DashboardStats {
   total_processed: number;
   total_successful_calls: number;
   total_failed_calls: number;
-  total_successful_sms: number;
-  total_failed_sms: number;
-  total_quarantine_sms?: number;
-  total_quarantine_unique?: number;
-  total_quarantine_active?: number;
 }
 
 const BACKEND_URL = window.location.origin.includes('localhost:5173') ? 'http://localhost:3001' : window.location.origin;
@@ -87,54 +76,29 @@ const BACKEND_URL = window.location.origin.includes('localhost:5173') ? 'http://
 function cleanDisplayTranscript(text: string | undefined): string {
   if (!text) return 'Nenhuma transcrição ou registro gravado para esta chamada.';
   let cleaned = text;
-  if (
-    cleaned.includes('# PERSONA') ||
-    cleaned.includes('Você é a Verô') ||
-    cleaned.includes('# REGRAS') ||
-    cleaned.includes('# ETAPA') ||
-    cleaned.includes('# CAIXA POSTAL') ||
-    cleaned.includes('# ANTI-ALUCINAÇÃO') ||
-    cleaned.includes('# CASUALIDADES')
-  ) {
+
+  // Limpar cabeçalhos de sistema ou regras se houver
+  if (cleaned.includes('# PERSONA') || cleaned.includes('# REGRAS') || cleaned.includes('Você é')) {
     const lines = cleaned.split(/\r?\n/);
     const realLines: string[] = [];
     let isInsidePrompt = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
-      if (
-        trimmed.startsWith('Cliente: #') ||
-        trimmed.startsWith('# ') ||
-        trimmed.startsWith('Você é a Verô') ||
-        trimmed.includes('Seu objetivo:') ||
-        trimmed.includes('ANTI-ALUCINAÇÃO') ||
-        trimmed.startsWith('# PERSONA')
-      ) {
+      if (trimmed.startsWith('#') || trimmed.includes('ANTI-ALUCINAÇÃO') || trimmed.startsWith('Você é')) {
         isInsidePrompt = true;
       }
 
       if (isInsidePrompt) {
         const isSpeakerLine = (
-          trimmed.startsWith('Sofia:') ||
+          trimmed.startsWith('Agente:') ||
           trimmed.startsWith('Vero:') ||
-          trimmed.startsWith('Verô:') ||
-          trimmed.startsWith('Cliente:') ||
           trimmed.startsWith('Assistente:') ||
           trimmed.startsWith('Bot:') ||
+          trimmed.startsWith('Cliente:') ||
           trimmed.startsWith('User:')
         );
-        const isPromptRule = (
-          trimmed.includes('#') ||
-          trimmed.includes('PERSONA') ||
-          trimmed.includes('REGRAS') ||
-          trimmed.includes('ETAPA') ||
-          trimmed.includes('CASUALIDADES') ||
-          trimmed.includes('CAIXA POSTAL') ||
-          trimmed.includes('ANTI-ALUCINAÇÃO') ||
-          trimmed.includes('Você é a Verô')
-        );
-
-        if (isSpeakerLine && !isPromptRule) {
+        if (isSpeakerLine && !trimmed.includes('#')) {
           isInsidePrompt = false;
           realLines.push(trimmed);
         }
@@ -146,17 +110,18 @@ function cleanDisplayTranscript(text: string | undefined): string {
   }
 
   cleaned = cleaned
-    .replace(/^Sofia:/gm, 'Vero:')
-    .replace(/^Verô:/gm, 'Vero:')
-    .replace(/^Assistente:/gm, 'Vero:')
-    .replace(/^Bot:/gm, 'Vero:')
+    .replace(/^Sofia:/gm, 'Agente:')
+    .replace(/^Vero:/gm, 'Agente:')
+    .replace(/^Verô:/gm, 'Agente:')
+    .replace(/^Assistente:/gm, 'Agente:')
+    .replace(/^Bot:/gm, 'Agente:')
     .replace(/^User:/gm, 'Cliente:')
     .replace(/^Customer:/gm, 'Cliente:');
 
   return cleaned.trim() || 'Nenhuma transcrição ou registro gravado para esta chamada.';
 }
 
-// Componente Moderno de KPI Card (Enterprise SaaS Style)
+// Componente Moderno de KPI Card
 interface KPICardProps {
   title: string;
   value: string;
@@ -212,53 +177,8 @@ const ModernKPICard: React.FC<KPICardProps> = ({
   );
 };
 
-// Componente Node para o Funil Operacional (Flow Diagram)
-interface FlowNodeProps {
-  title: string;
-  count: number | string;
-  pct: string;
-  status?: 'primary' | 'success' | 'danger' | 'warning' | 'neutral';
-}
-
-const FlowNode: React.FC<FlowNodeProps> = ({
-  title,
-  count,
-  pct,
-  status = 'neutral'
-}) => {
-  const borderStyles = {
-    primary: 'border-sky-300 bg-sky-50/40 text-slate-900',
-    success: 'border-emerald-300 bg-emerald-50/40 text-slate-900',
-    danger: 'border-rose-200 bg-rose-50/30 text-slate-900',
-    warning: 'border-amber-200 bg-amber-50/30 text-slate-900',
-    neutral: 'border-slate-200 bg-white text-slate-900'
-  }[status];
-
-  const badgeStyles = {
-    primary: 'bg-sky-100 text-sky-700 border-sky-200',
-    success: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-    danger: 'bg-rose-100 text-rose-700 border-rose-200',
-    warning: 'bg-amber-100 text-amber-700 border-amber-200',
-    neutral: 'bg-slate-100 text-slate-600 border-slate-200'
-  }[status];
-
-  return (
-    <div className={`rounded-xl border p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all ${borderStyles} w-full flex flex-col justify-between`}>
-      <div className="flex items-center justify-between gap-1.5 mb-1.5">
-        <span className="text-[11px] font-semibold text-slate-600 truncate" title={title}>{title}</span>
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border tabular-nums shrink-0 ${badgeStyles}`}>
-          {pct}
-        </span>
-      </div>
-      <div className="text-base font-semibold tracking-tight text-slate-900 tabular-nums">
-        {typeof count === 'number' ? count.toLocaleString('pt-BR') : count}
-      </div>
-    </div>
-  );
-};
-
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'campaigns' | 'leads' | 'reports'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'campaigns' | 'leads'>('dashboard');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     total_campaigns: 0,
@@ -266,12 +186,12 @@ export default function App() {
     total_processed: 0,
     total_successful_calls: 0,
     total_failed_calls: 0,
-    total_successful_sms: 0,
-    total_failed_sms: 0,
   });
 
   // Upload state
   const [campaignName, setCampaignName] = useState('');
+  const [assistantId, setAssistantId] = useState('5');
+  const [phoneNumberId, setPhoneNumberId] = useState('oktor_sip_500ch');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -288,15 +208,14 @@ export default function App() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedTranscriptLead, setSelectedTranscriptLead] = useState<Lead | null>(null);
 
-  // Ocorrências / Tabulações DDM
+  // Ocorrências / Tabulações
   const [occurrences, setOccurrences] = useState<{ occurrence: string; count: number }[]>([]);
-  const [exportOccurrenceFilter, setExportOccurrenceFilter] = useState<string>('all');
   
-  // BI e Métricas por Horário e Filtro de Data (Padrão: Hoje)
+  // BI e Métricas por Horário e Filtro de Data
   const todayIso = new Date().toISOString().split('T')[0];
-  const [hourlyData, setHourlyData] = useState<{ hour: string; atendeu: number; naoAtendeu: number; quarentena3Dias: number; total: number }[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string>(todayIso); // Inicia sempre focado na operação de Hoje
-  const [availableDates, setAvailableDates] = useState<{ date_str: string; total_processed: number; successful_calls: number; successful_sms: number }[]>([]);
+  const [hourlyData, setHourlyData] = useState<{ hour: string; atendeu: number; naoAtendeu: number; discados: number }[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>(todayIso);
+  const [availableDates, setAvailableDates] = useState<{ date_str: string; total_processed: number; successful_calls: number }[]>([]);
   const [startHour, setStartHour] = useState<number>(8);
   const [endHour, setEndHour] = useState<number>(21);
 
@@ -325,35 +244,6 @@ export default function App() {
     }
   };
 
-  // Fetch initial data
-  useEffect(() => {
-    fetchStats(selectedCampaignId, selectedDate);
-    fetchCampaigns();
-    fetchOccurrences(selectedCampaignId, selectedDate);
-    fetchHourlyStats(selectedCampaignId, 8, 21, selectedDate);
-    fetchAvailableDates();
-    fetchLeads('all', 1);
-  }, []);
-
-  const handleOpenTranscriptModal = (lead: Lead) => {
-    setSelectedTranscriptLead(lead);
-    fetch(`${BACKEND_URL}/api/campaigns/lead/${lead.id}`)
-      .then(res => res.json())
-      .then(fullLead => {
-        if (fullLead && !fullLead.error) {
-          setSelectedTranscriptLead(fullLead);
-        }
-      })
-      .catch(err => console.error('Error fetching live lead details:', err));
-  };
-
-  const statusFilterRef = useRef(statusFilter);
-  statusFilterRef.current = statusFilter;
-  const searchTermRef = useRef(searchTerm);
-  searchTermRef.current = searchTerm;
-  const leadsPageRef = useRef(leadsPage);
-  leadsPageRef.current = leadsPage;
-
   const fetchHourlyStats = async (campaignId: number | 'all' = selectedCampaignId, sH: number = startHour, eH: number = endHour, dt: string = selectedDate) => {
     try {
       const dateQuery = (dt && dt !== 'all') ? `&date=${dt}` : '';
@@ -366,31 +256,6 @@ export default function App() {
       console.error('Error fetching hourly stats:', err);
     }
   };
-
-  // Auto-refresh contínuo inteligente e leve
-  useEffect(() => {
-    fetchStats(selectedCampaignId, selectedDate);
-    fetchCampaigns();
-    fetchOccurrences(selectedCampaignId, selectedDate);
-    fetchHourlyStats(selectedCampaignId, startHour, endHour, selectedDate);
-    fetchAvailableDates();
-    if (activeTab === 'leads') {
-      fetchLeads(selectedCampaignId, leadsPageRef.current, statusFilterRef.current, searchTermRef.current);
-    }
-
-    const interval = setInterval(() => {
-      fetchStats(selectedCampaignId, selectedDate);
-      fetchCampaigns();
-      if (activeTab === 'dashboard') {
-        fetchOccurrences(selectedCampaignId, selectedDate);
-        fetchHourlyStats(selectedCampaignId, startHour, endHour, selectedDate);
-      } else if (activeTab === 'leads') {
-        fetchLeads(selectedCampaignId, leadsPageRef.current, statusFilterRef.current, searchTermRef.current);
-      }
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [activeTab, selectedCampaignId, leadsPage, statusFilter, searchTerm, startHour, endHour, selectedDate]);
 
   const fetchStats = async (campaignId: number | 'all' = selectedCampaignId, dt: string = selectedDate) => {
     try {
@@ -417,21 +282,12 @@ export default function App() {
     }
   };
 
-  const handleSync = async () => {
-    fetchStats(selectedCampaignId, selectedDate);
-    fetchCampaigns();
-    fetchAvailableDates();
-    try {
-      await fetch(`${BACKEND_URL}/api/leads/sync-recordings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ campaignId: selectedCampaignId })
-      });
-      fetchLeads(selectedCampaignId, leadsPageRef.current, statusFilterRef.current, searchTermRef.current);
-    } catch (e) {
-      console.error('Error syncing recordings:', e);
-    }
-  };
+  const statusFilterRef = useRef(statusFilter);
+  statusFilterRef.current = statusFilter;
+  const searchTermRef = useRef(searchTerm);
+  searchTermRef.current = searchTerm;
+  const leadsPageRef = useRef(leadsPage);
+  leadsPageRef.current = leadsPage;
 
   const fetchLeads = async (campaignId: number | 'all', page: number = leadsPageRef.current, currentStatusFilter: string = statusFilterRef.current, currentSearchTerm: string = searchTermRef.current) => {
     try {
@@ -447,47 +303,77 @@ export default function App() {
     }
   };
 
+  // Inicialização
+  useEffect(() => {
+    fetchStats(selectedCampaignId, selectedDate);
+    fetchCampaigns();
+    fetchOccurrences(selectedCampaignId, selectedDate);
+    fetchHourlyStats(selectedCampaignId, 8, 21, selectedDate);
+    fetchAvailableDates();
+    fetchLeads('all', 1);
+  }, []);
+
+  // Auto-refresh contínuo
+  useEffect(() => {
+    fetchStats(selectedCampaignId, selectedDate);
+    fetchCampaigns();
+    fetchOccurrences(selectedCampaignId, selectedDate);
+    fetchHourlyStats(selectedCampaignId, startHour, endHour, selectedDate);
+    fetchAvailableDates();
+    if (activeTab === 'leads') {
+      fetchLeads(selectedCampaignId, leadsPageRef.current, statusFilterRef.current, searchTermRef.current);
+    }
+
+    const interval = setInterval(() => {
+      fetchStats(selectedCampaignId, selectedDate);
+      fetchCampaigns();
+      if (activeTab === 'dashboard') {
+        fetchOccurrences(selectedCampaignId, selectedDate);
+        fetchHourlyStats(selectedCampaignId, startHour, endHour, selectedDate);
+      } else if (activeTab === 'leads') {
+        fetchLeads(selectedCampaignId, leadsPageRef.current, statusFilterRef.current, searchTermRef.current);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [activeTab, selectedCampaignId, leadsPage, statusFilter, searchTerm, startHour, endHour, selectedDate]);
+
+  const handleOpenTranscriptModal = (lead: Lead) => {
+    setSelectedTranscriptLead(lead);
+    fetch(`${BACKEND_URL}/api/campaigns/lead/${lead.id}`)
+      .then(res => res.json())
+      .then(fullLead => {
+        if (fullLead && !fullLead.error) {
+          setSelectedTranscriptLead(fullLead);
+        }
+      })
+      .catch(err => console.error('Error fetching live lead details:', err));
+  };
+
+  const handleSync = async () => {
+    fetchStats(selectedCampaignId, selectedDate);
+    fetchCampaigns();
+    fetchAvailableDates();
+    fetchLeads(selectedCampaignId, leadsPageRef.current, statusFilterRef.current, searchTermRef.current);
+  };
+
   const handleCampaignSelect = (id: number | 'all') => {
     setSelectedCampaignId(id);
     setLeadsPage(1);
-    const targetDate = id === 'all' ? todayIso : 'all';
-    setSelectedDate(targetDate);
-    fetchStats(id, targetDate);
-    fetchLeads(id, 1, statusFilterRef.current, searchTermRef.current);
-    fetchOccurrences(id, targetDate);
-    fetchHourlyStats(id, startHour, endHour, targetDate);
-    fetchAvailableDates();
-  };
-
-  const handleDeleteCampaign = async (id: number) => {
-    if (!confirm('Deseja excluir esta campanha e todos os seus leads?')) return;
-    try {
-      const res = await fetch(`${BACKEND_URL}/api/campaigns/${id}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        setSelectedCampaignId('all');
-        setLeads([]);
-        fetchCampaigns();
-        fetchStats();
-      }
-    } catch (err) {
-      console.error('Error deleting campaign:', err);
-    }
-  };
-
-  const formatBRL = (val: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+    fetchStats(id, selectedDate);
+    fetchOccurrences(id, selectedDate);
+    fetchHourlyStats(id, startHour, endHour, selectedDate);
+    fetchLeads(id, 1, statusFilter, searchTerm);
   };
 
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) {
-      setUploadError('Por favor, selecione uma planilha.');
+      setUploadError('Por favor, selecione um arquivo Excel ou CSV.');
       return;
     }
     if (!campaignName.trim()) {
-      setUploadError('Por favor, digite o nome da campanha.');
+      setUploadError('Por favor, informe um nome para a campanha.');
       return;
     }
 
@@ -497,24 +383,22 @@ export default function App() {
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('campaignName', campaignName);
+    formData.append('campaignName', campaignName.trim());
     formData.append('dialerProvider', 'dialddm');
-    formData.append('vapiAssistantId', '6');
-    formData.append('vapiPhoneNumberId', 'oktor_sip_500ch');
+    formData.append('vapiAssistantId', assistantId);
+    formData.append('vapiPhoneNumberId', phoneNumberId);
 
     try {
       const res = await fetch(`${BACKEND_URL}/api/campaigns/upload`, {
         method: 'POST',
         body: formData
       });
-
       const data = await res.json();
+
       if (res.ok) {
-        const createdName = data.name || campaignName || 'Nova Campanha';
-        const createdTotal = data.total_leads ?? data.totalLeads ?? 1;
-        setUploadSuccess(`Campanha "${createdName}" criada com ${createdTotal} leads com sucesso!`);
-        setFile(null);
+        setUploadSuccess(`Campanha #${data.campaignId} criada com ${data.total_leads} leads! Discagem iniciada.`);
         setCampaignName('');
+        setFile(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
         fetchCampaigns();
         fetchStats();
@@ -542,7 +426,7 @@ export default function App() {
   };
 
   const handleCancelCampaign = async (id: number) => {
-    if (!confirm('Deseja realmente cancelar esta campanha? Os disparos restantes serão interrompidos.')) return;
+    if (!confirm('Deseja pausar/interromper os disparos desta campanha?')) return;
     try {
       const res = await fetch(`${BACKEND_URL}/api/campaigns/${id}/cancel`, {
         method: 'POST'
@@ -555,51 +439,43 @@ export default function App() {
     }
   };
 
-  const filteredLeads = leads.filter(l => 
-    l.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    l.phone.includes(searchTerm)
-  );
-
   return (
     <div className="min-h-screen bg-[#F8FAFC] flex flex-col font-sans text-slate-800 antialiased">
       {/* Top Navbar */}
       <header className="bg-[#890038] border-b border-[#72002E] sticky top-0 z-40 shadow-xs">
         <div className="w-full max-w-[1720px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img 
-              src="/logo_vero.png" 
-              alt="Logo Vero" 
-              className="h-7 w-auto object-contain"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = '/logo_vero.svg';
-              }}
-            />
-            <div className="h-5 w-[1px] bg-white/20 mx-1 hidden sm:block" />
-            <h1 className="text-base sm:text-lg font-semibold text-white tracking-tight">
-              Painel de Controle - Recuperação de Dívidas
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-xl text-white tracking-wider">VERO</span>
+              <span className="text-white/80 font-medium text-xs px-2 py-0.5 rounded bg-white/10 uppercase tracking-widest">Acordo AI</span>
+            </div>
+            <div className="h-5 w-[1px] bg-white/20 mx-2 hidden sm:block" />
+            <h1 className="text-sm sm:text-base font-medium text-white/90 hidden md:block">
+              Orquestrador de Voz IA & Negociação
             </h1>
           </div>
 
           <div className="flex items-center gap-4">
             <button 
               onClick={handleSync}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white hover:text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-lg transition cursor-pointer"
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white bg-white/10 hover:bg-white/20 border border-white/15 rounded-lg transition cursor-pointer"
             >
               <RefreshCw size={14} /> Sincronizar
             </button>
             <div className="flex items-center gap-2 text-xs">
-              <span className="text-white/70">Status da API:</span>
+              <span className="text-white/70">Gateway:</span>
               <span className="flex items-center gap-1 font-semibold text-emerald-300">
-                Conectado
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Dialog DDM
               </span>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content Layout */}
+      {/* Main Layout */}
       <div className="flex-1 flex w-full max-w-[1720px] mx-auto">
-        {/* Sidebar Navigation */}
+        {/* Sidebar */}
         <aside className="w-60 border-r border-slate-200/80 bg-white/80 backdrop-blur-xs p-4 space-y-6 hidden md:block shrink-0">
           <div className="space-y-1">
             <button 
@@ -623,104 +499,61 @@ export default function App() {
           </div>
         </aside>
 
-        {/* Área de Visualização */}
+        {/* Conteúdo Principal */}
         <div className="p-6 lg:p-8 flex-1 min-w-0 space-y-8">
           
-          {/* TAB 1: DASHBOARD OPERACIONAL EXECUTIVO */}
+          {/* TAB 1: DASHBOARD OPERACIONAL */}
           {activeTab === 'dashboard' && (() => {
             const isSpecificCampaign = selectedCampaignId !== 'all';
             const isDateFiltered = selectedDate && selectedDate !== 'all';
             const activeCampaign = isSpecificCampaign ? campaigns.find(c => c.id === selectedCampaignId) : null;
 
-            // Formatação do label da data para os textos e badges
             const formattedDateLabel = isDateFiltered
               ? selectedDate.split('-').reverse().join('/')
               : 'Acumulado Geral';
 
-            // 1. Volume Discado (Tentativas de discagem)
             const totalDiscados = stats.total_processed || 0;
-
-            // 2. Base Real de Leads (Tamanho da lista única de clientes carregados)
             const totalLeadsBase = stats.total_unique_leads || stats.total_leads || totalDiscados || 0;
-
-            // 3. Conexões Atendidas (Alô)
             const totalAtendidas = stats.total_successful_calls || 0;
-
-            // 4. Não Atendidas
             const totalNaoAtendidas = stats.total_failed_calls || 0;
 
-            // 5. SMS Enviados
-            const totalSms = stats.total_successful_sms || 0;
-
-            // 6. Cálculo dos Spins (Giros da Base): Discagens / Base de Leads
-            const activeSpins = totalLeadsBase > 0 ? (totalDiscados / totalLeadsBase) : (totalDiscados > 0 ? 1.0 : 0);
-
-            const formattedSpins = activeSpins.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
-
-            const displayedQuarantineCount = isSpecificCampaign
-              ? (stats.total_quarantine_unique ?? 0)
-              : (isDateFiltered
-                  ? (stats.total_quarantine_unique ?? 0)
-                  : (stats.total_quarantine_active ?? stats.total_quarantine_unique ?? 0));
-
-            const totalQuarentena3Dias = displayedQuarantineCount;
-
             const hitRate = totalDiscados > 0 ? (totalAtendidas / totalDiscados) * 100 : 0;
-            const conversaoRate = totalDiscados > 0 ? (totalSms / totalDiscados) * 100 : 0;
-            const conversaoAloRate = totalAtendidas > 0 ? (totalSms / totalAtendidas) * 100 : 0;
 
-            // Agrupamento estrito nas 3 Tabulações Oficiais da Vero
-            const groupedOccurrences = occurrences.reduce((acc, o) => {
-              const occ = (o.occurrence || '').toUpperCase();
-              const isAnswered = occ.startsWith('ATENDEU') || occ.includes('CONFIRMOU') || occ.includes('ENVIO SMS') || occ.includes('LIGAÇÃO MUDA') || occ.includes('PROMESSA');
-              const is3Days = occ.includes('3 DIAS') || occ.includes('QUARENTENA');
-
-              if (isAnswered) {
-                acc.atendeu += o.count;
-              } else if (is3Days) {
-                acc.sms3dias += o.count;
-              } else {
-                acc.naoAtendeu += o.count;
-              }
-              return acc;
-            }, { atendeu: 0, naoAtendeu: 0, sms3dias: 0 });
-
-            const officialAtendeu = groupedOccurrences.atendeu || totalAtendidas;
-            const officialSMS3Dias = groupedOccurrences.sms3dias || totalQuarentena3Dias;
-            const officialNaoAtendeu = groupedOccurrences.naoAtendeu || Math.max(0, totalDiscados - officialAtendeu - officialSMS3Dias);
-
-            const tabulationPieData = [
-              { name: '🟢 ATENDEU - SMS ENVIADO', value: officialAtendeu, color: '#10B981' },
-              { name: '🔴 NÃO ATENDEU', value: officialNaoAtendeu, color: '#F43F5E' },
-              ...(officialSMS3Dias > 0 ? [{ name: '🟡 SMS ENVIADO 3 DIAS', value: officialSMS3Dias, color: '#F59E0B' }] : [])
-            ];
-
-            const todayIso = new Date().toISOString().split('T')[0];
+            // Paleta para as ocorrências
+            const pieColors = ['#10B981', '#F43F5E', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899', '#64748B'];
+            const tabulationPieData = occurrences.length > 0 
+              ? occurrences.map((o, idx) => ({
+                  name: o.occurrence || 'Não Identificado',
+                  value: o.count,
+                  color: pieColors[idx % pieColors.length]
+                }))
+              : [
+                  { name: 'Atendidas', value: totalAtendidas, color: '#10B981' },
+                  { name: 'Não Atendidas', value: totalNaoAtendidas, color: '#F43F5E' }
+                ];
 
             return (
               <div className="w-full space-y-6">
-                {/* 1. Header & Filtros Compactos Modernos */}
+                {/* Header & Filtros */}
                 <div className="bg-white rounded-xl border border-slate-200/80 p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1">
-                      <span>Dashboards</span>
-                      <span className="text-slate-300">/</span>
                       <span>Painéis</span>
                       <span className="text-slate-300">/</span>
                       <span className="text-slate-700 font-medium">Dashboard Operacional</span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Dashboard Operacional</h1>
+                      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Operação de Voz com IA</h1>
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                        Operação Ativa
+                        Disparador Ativo
                       </span>
                     </div>
                   </div>
 
-                  {/* Barra de Filtros Alinhada */}
+                  {/* Filtros */}
                   <div className="flex flex-wrap items-center gap-3">
-                    {/* Filtro de Campanha */}
+                    {/* Campanha */}
                     <div className="flex items-center gap-2 bg-slate-50/90 px-3 py-2 rounded-lg border border-slate-200/80 shadow-2xs">
                       <span className="text-xs font-medium text-slate-500">Campanha:</span>
                       <select 
@@ -738,7 +571,7 @@ export default function App() {
                       </select>
                     </div>
 
-                    {/* Filtro de Data do Dia */}
+                    {/* Data */}
                     <div className="flex items-center gap-2 bg-slate-50/90 px-3 py-2 rounded-lg border border-slate-200/80 shadow-2xs">
                       <span className="text-xs font-medium text-slate-500 flex items-center gap-1">
                         <Calendar size={13} className="text-slate-400" /> Data:
@@ -754,7 +587,7 @@ export default function App() {
                         }}
                         className="text-xs font-semibold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
                       >
-                        <option value="all">📅 Todos os Dias (Acumulado)</option>
+                        <option value="all">📅 Todos os Dias</option>
                         <option value={todayIso}>
                           ⚡ Hoje ({new Date().toLocaleDateString('pt-BR')})
                         </option>
@@ -762,17 +595,16 @@ export default function App() {
                           .filter(d => d.date_str !== todayIso)
                           .map(d => {
                             const [year, month, day] = d.date_str.split('-');
-                            const formatted = `${day}/${month}/${year}`;
                             return (
                               <option key={d.date_str} value={d.date_str}>
-                                📅 {formatted} ({d.total_processed} discagens)
+                                📅 {day}/{month}/{year} ({d.total_processed} discagens)
                               </option>
                             );
                           })}
                       </select>
                     </div>
 
-                    {/* Filtro de Horas */}
+                    {/* Horário */}
                     <div className="flex items-center gap-2 bg-slate-50/90 px-3 py-2 rounded-lg border border-slate-200/80 shadow-2xs">
                       <span className="text-xs font-medium text-slate-500">Horário:</span>
                       <select 
@@ -803,89 +635,61 @@ export default function App() {
                         ))}
                       </select>
                     </div>
-
-                    {/* Badge Total de Leads */}
-                    <div 
-                      className="bg-slate-100 border border-slate-200/80 text-slate-800 px-3.5 py-2 rounded-lg flex items-center gap-2 shadow-2xs" 
-                      title="Total de leads da base"
-                    >
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Leads:</span>
-                      <span className="text-sm font-bold tabular-nums text-slate-900">
-                        {totalLeadsBase.toLocaleString('pt-BR')}
-                      </span>
-                    </div>
-
-                    {/* Badge Quarentena Ativa (Leads Únicos) */}
-                    <div 
-                      className="bg-amber-50 border border-amber-200/80 text-amber-950 px-3.5 py-2 rounded-lg flex items-center gap-2 shadow-2xs" 
-                      title="Total de clientes únicos que já foram contatados nos últimos 3 dias e estão protegidos contra discagens duplicadas"
-                    >
-                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Quarentena (3d):</span>
-                      <span className="text-sm font-bold tabular-nums text-amber-900">
-                        {displayedQuarantineCount.toLocaleString('pt-BR')} leads
-                      </span>
-                    </div>
-
-                    {/* Badge Spins (Giros da Base) */}
-                    <div className="bg-sky-50 border border-sky-200/80 text-sky-950 px-3.5 py-2 rounded-lg flex items-center gap-2 shadow-2xs">
-                      <span className="text-xs font-semibold text-sky-700 uppercase tracking-wider">Spins:</span>
-                      <span className="text-sm font-bold tabular-nums text-sky-900">{formattedSpins}x</span>
-                    </div>
                   </div>
                 </div>
 
-                {/* 2. Grid de KPIs Reais da Operação (5 Cards Enterprise SaaS) */}
+                {/* KPIs Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                   <ModernKPICard 
-                    title="1. Base de Leads"
+                    title="1. Base Total de Leads"
                     value={totalLeadsBase.toLocaleString('pt-BR')}
-                    subtitle={isDateFiltered ? `Base de leads operada em ${formattedDateLabel}` : "Total de leads carregados na plataforma"}
+                    subtitle={isDateFiltered ? `Leads importados em ${formattedDateLabel}` : "Total de leads cadastrados"}
                     progress={100}
                     colorTheme="slate"
-                    indicatorText="Base Total"
+                    indicatorText="Mailing"
                   />
                   <ModernKPICard 
                     title="2. Volume Discado"
                     value={totalDiscados.toLocaleString('pt-BR')}
-                    subtitle={isDateFiltered ? `Discagens realizadas em ${formattedDateLabel}` : `${(totalLeadsBase > 0 ? (totalDiscados / totalLeadsBase) * 100 : 100).toFixed(1).replace('.', ',')}% da base discada`}
-                    progress={totalLeadsBase > 0 ? (totalDiscados / totalLeadsBase) * 100 : 100}
+                    subtitle={`${(totalLeadsBase > 0 ? (totalDiscados / totalLeadsBase) * 100 : 0).toFixed(1)}% da base discada`}
+                    progress={totalLeadsBase > 0 ? (totalDiscados / totalLeadsBase) * 100 : 0}
                     colorTheme="cyan"
-                    indicatorText={isDateFiltered ? "No Dia" : "Discagens"}
+                    indicatorText="Tentativas"
                   />
                   <ModernKPICard 
                     title="3. Taxa de Alô (Hit)"
                     value={`${hitRate.toFixed(2).replace('.', ',')}%`}
-                    subtitle={isDateFiltered ? `${totalAtendidas.toLocaleString('pt-BR')} conexões em ${formattedDateLabel}` : `${totalAtendidas.toLocaleString('pt-BR')} conexões atendidas`}
+                    subtitle={`${totalAtendidas.toLocaleString('pt-BR')} conexões atendidas`}
                     progress={hitRate}
                     colorTheme="indigo"
-                    indicatorText="Alô / Atendeu"
+                    indicatorText="Hit Rate"
                   />
                   <ModernKPICard 
-                    title="4. SMS Enviados"
-                    value={totalSms.toLocaleString('pt-BR')}
-                    subtitle={isDateFiltered ? `${conversaoAloRate.toFixed(1).replace('.', ',')}% das conexões de ${formattedDateLabel}` : `${conversaoAloRate.toFixed(1).replace('.', ',')}% das ligações atendidas`}
-                    progress={Math.min(100, conversaoRate * 5)}
+                    title="4. Chamadas Atendidas"
+                    value={totalAtendidas.toLocaleString('pt-BR')}
+                    subtitle="Ligações completadas com áudio"
+                    progress={hitRate}
                     colorTheme="emerald"
-                    indicatorText="Linha Digitável"
+                    indicatorText="Conectadas"
                   />
                   <ModernKPICard 
-                    title="Spins (Giros da Base)"
-                    value={`${formattedSpins} Giros`}
-                    subtitle={isDateFiltered ? (activeSpins >= 1 ? `${Math.floor(activeSpins)} giro(s) no dia` : 'Giro em andamento no dia') : (activeSpins >= 1 ? `${Math.floor(activeSpins)} giro(s) completo(s)` : 'Giro em andamento')}
-                    progress={Math.min(100, (activeSpins % 1) * 100 || (activeSpins > 0 ? 100 : 0))}
-                    colorTheme="cyan"
-                    indicatorText="Giros Concluídos"
+                    title="5. Não Atendidas / Caixa"
+                    value={totalNaoAtendidas.toLocaleString('pt-BR')}
+                    subtitle="Ocupado, sem resposta ou caixa"
+                    progress={totalDiscados > 0 ? (totalNaoAtendidas / totalDiscados) * 100 : 0}
+                    colorTheme="rose"
+                    indicatorText="Incompletas"
                   />
                 </div>
 
-                {/* 3. Gráficos Operacionais (2 Colunas) */}
+                {/* Gráficos */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Gráfico de Barras Empilhadas por Horário */}
+                  {/* Gráfico de Barras por Horário */}
                   <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03)] lg:col-span-2">
                     <div className="flex items-center justify-between mb-5">
                       <div>
-                        <h3 className="text-sm font-semibold text-slate-900">Resultados das Discagens (por Horário)</h3>
-                        <p className="text-xs text-slate-400 mt-0.5">Volumetria e status das chamadas em cada hora do dia</p>
+                        <h3 className="text-sm font-semibold text-slate-900">Volumetria de Discagens por Horário</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">Distribuição horária das chamadas atendidas e não atendidas</p>
                       </div>
                     </div>
                     <div className="h-[280px] w-full">
@@ -895,12 +699,11 @@ export default function App() {
                           <XAxis dataKey="hour" tick={{ fontSize: 11, fill: '#64748B' }} axisLine={{ stroke: '#E2E8F0' }} tickLine={false} />
                           <YAxis tick={{ fontSize: 11, fill: '#64748B' }} axisLine={{ stroke: '#E2E8F0' }} tickLine={false} />
                           <RechartsTooltip 
-                            contentStyle={{ backgroundColor: '#FFFFFF', borderRadius: '10px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', fontSize: '12px', fontFamily: 'Geist, sans-serif' }} 
+                            contentStyle={{ backgroundColor: '#FFFFFF', borderRadius: '10px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', fontSize: '12px' }} 
                           />
                           <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '14px' }} iconType="circle" />
-                          <Bar dataKey="atendeu" name="🟢 ATENDEU - SMS ENVIADO" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} barSize={28} />
-                          <Bar dataKey="naoAtendeu" name="🔴 NÃO ATENDEU" stackId="a" fill="#F43F5E" radius={[0, 0, 0, 0]} barSize={28} />
-                          <Bar dataKey="quarentena3Dias" name="🟡 SMS ENVIADO 3 DIAS" stackId="a" fill="#F59E0B" radius={[4, 4, 0, 0]} barSize={28} />
+                          <Bar dataKey="atendeu" name="🟢 Atendidas (Alô)" stackId="a" fill="#10B981" radius={[0, 0, 0, 0]} barSize={28} />
+                          <Bar dataKey="naoAtendeu" name="🔴 Não Atendeu / Caixa" stackId="a" fill="#F43F5E" radius={[4, 4, 0, 0]} barSize={28} />
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -910,12 +713,12 @@ export default function App() {
                   <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03)] lg:col-span-1 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <h3 className="text-sm font-semibold text-slate-900">Distribuição das Tabulações</h3>
+                        <h3 className="text-sm font-semibold text-slate-900">Ocorrências da IA</h3>
                         <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 text-slate-700 rounded-md border border-slate-200/60 tabular-nums">
                           {totalDiscados.toLocaleString('pt-BR')} Discados
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 mb-4">Divisão proporcional das 3 tabulações oficiais</p>
+                      <p className="text-xs text-slate-400 mb-4">Classificação e tabulações retornadas pelo agente</p>
                       <div className="h-[230px] w-full relative flex items-center justify-center">
                         <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
@@ -933,7 +736,7 @@ export default function App() {
                               ))}
                             </Pie>
                             <RechartsTooltip 
-                              contentStyle={{ backgroundColor: '#FFFFFF', borderRadius: '10px', border: '1px solid #E2E8F0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.08)', fontSize: '12px', zIndex: 50 }} 
+                              contentStyle={{ backgroundColor: '#FFFFFF', borderRadius: '10px', border: '1px solid #E2E8F0', fontSize: '12px' }} 
                             />
                             <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} iconType="circle" />
                           </PieChart>
@@ -943,70 +746,12 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* 4. Funil Operacional Real (As 4 Etapas Oficiais da Vero) */}
-                <div className="bg-white rounded-xl border border-slate-200/80 p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03)] space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-900">Funil Operacional de Recuperação</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Fluxo das 4 etapas reais: Base de Leads → Discagens → Taxa de Alô → SMS Enviados</p>
-                    </div>
-                    <span className="text-xs text-slate-400 font-medium">Métricas Reais</span>
-                  </div>
-
-                  {/* Flow Diagram Grid - 4 Etapas Oficiais */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
-                    {/* Etapa 1: Base de Leads */}
-                    <div className="flex flex-col gap-2.5">
-                      <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">1. Base de Leads</span>
-                      <FlowNode title="Total de Leads Carregados" count={totalLeadsBase} pct="100%" status="neutral" />
-                    </div>
-
-                    {/* Etapa 2: Discagens */}
-                    <div className="flex flex-col gap-2.5">
-                      <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">2. Volume Discado</span>
-                      <FlowNode 
-                        title="Tentativas Realizadas" 
-                        count={totalDiscados} 
-                        pct={`${(totalLeadsBase > 0 ? (totalDiscados / totalLeadsBase) * 100 : 100).toFixed(2).replace('.', ',')}%`} 
-                        status="primary" 
-                      />
-                    </div>
-
-                    {/* Etapa 3: Taxa de Alô */}
-                    <div className="flex flex-col gap-2.5">
-                      <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">3. Taxa de Alô (Hit)</span>
-                      <FlowNode title="🟢 ATENDEU - SMS ENVIADO" count={totalAtendidas} pct={`${hitRate.toFixed(2).replace('.', ',')}%`} status="success" />
-                      <FlowNode title="🔴 NÃO ATENDEU" count={totalNaoAtendidas} pct={`${(totalDiscados > 0 ? (totalNaoAtendidas / totalDiscados) * 100 : 0).toFixed(2).replace('.', ',')}%`} status="danger" />
-                    </div>
-
-                    {/* Etapa 4: SMS Enviados */}
-                    <div className="flex flex-col gap-2.5">
-                      <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">4. SMS Enviados</span>
-                      <FlowNode 
-                        title="✉️ SMS ENVIADO COM SUCESSO" 
-                        count={totalSms} 
-                        pct={`${conversaoRate.toFixed(2).replace('.', ',')}%`} 
-                        status="success" 
-                      />
-                      {displayedQuarantineCount > 0 && (
-                        <FlowNode 
-                          title="🟡 Quarentena (Leads Únicos)" 
-                          count={displayedQuarantineCount} 
-                          pct={`${(totalLeadsBase > 0 ? (displayedQuarantineCount / totalLeadsBase) * 100 : 0).toFixed(1).replace('.', ',')}%`} 
-                          status="warning" 
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* 5. Seção de Tabulações por Hora */}
+                {/* Tabela de Horários */}
                 <div className="bg-white rounded-xl border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.03)] overflow-hidden">
-                  {/* Header da Tabela */}
                   <div className="border-b border-slate-200/80 px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-50/50">
                     <div>
-                      <h3 className="text-sm font-semibold text-slate-900">Tabulações por Hora</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">Distribuição horária das 3 ocorrências oficiais da operação</p>
+                      <h3 className="text-sm font-semibold text-slate-900">Detalhamento por Hora</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Métricas de ligações concluídas ao longo do dia</p>
                     </div>
 
                     {activeCampaign && (
@@ -1038,13 +783,12 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* Tabela de Tabulações por Hora */}
                   <div className="p-6">
                     <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
                       <table className="w-full text-left text-xs text-slate-600">
                         <thead className="bg-slate-50/80 text-slate-500 font-semibold border-b border-slate-200/80 text-[11px]">
                           <tr>
-                            <th className="py-3 px-4">Tabulação / Ocorrência</th>
+                            <th className="py-3 px-4">Status</th>
                             {hourlyData.map(h => (
                               <th key={h.hour} className="py-3 px-2.5 text-center">{h.hour}</th>
                             ))}
@@ -1052,16 +796,13 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 tabular-nums">
-                          {/* 1. ATENDEU - SMS ENVIADO */}
                           <tr className="hover:bg-slate-50/70 transition-colors">
-                            <td className="py-2.5 px-4 font-semibold text-emerald-700">🟢 ATENDEU - SMS ENVIADO</td>
+                            <td className="py-2.5 px-4 font-semibold text-emerald-700">🟢 ATENDIDAS</td>
                             {hourlyData.map(h => (
                               <td key={h.hour} className="py-2.5 px-2.5 text-center text-slate-700 font-medium">{h.atendeu.toLocaleString('pt-BR')}</td>
                             ))}
                             <td className="py-2.5 px-4 text-right font-bold text-emerald-700">{totalAtendidas.toLocaleString('pt-BR')}</td>
                           </tr>
-
-                          {/* 2. NÃO ATENDEU */}
                           <tr className="hover:bg-slate-50/70 transition-colors">
                             <td className="py-2.5 px-4 font-medium text-rose-700">🔴 NÃO ATENDEU</td>
                             {hourlyData.map(h => (
@@ -1069,23 +810,12 @@ export default function App() {
                             ))}
                             <td className="py-2.5 px-4 text-right font-bold text-rose-700">{totalNaoAtendidas.toLocaleString('pt-BR')}</td>
                           </tr>
-
-                          {/* 3. SMS ENVIADO 3 DIAS */}
-                          {totalQuarentena3Dias > 0 && (
-                            <tr className="hover:bg-slate-50/70 transition-colors">
-                              <td className="py-2.5 px-4 font-medium text-amber-700">🟡 SMS ENVIADO 3 DIAS</td>
-                              {hourlyData.map(h => (
-                                <td key={h.hour} className="py-2.5 px-2.5 text-center text-slate-600">{h.quarentena3Dias.toLocaleString('pt-BR')}</td>
-                              ))}
-                              <td className="py-2.5 px-4 text-right font-bold text-amber-700">{totalQuarentena3Dias.toLocaleString('pt-BR')}</td>
-                            </tr>
-                          )}
                         </tbody>
                         <tfoot className="bg-slate-50/90 font-semibold border-t-2 border-slate-200 text-slate-900 text-[11px] tabular-nums">
                           <tr>
                             <td className="py-3 px-4 uppercase tracking-wider">Total Discado</td>
                             {hourlyData.map(h => (
-                              <td key={h.hour} className="py-3 px-2.5 text-center font-bold">{(h.atendeu + h.naoAtendeu).toLocaleString('pt-BR')}</td>
+                              <td key={h.hour} className="py-3 px-2.5 text-center font-bold">{h.discados.toLocaleString('pt-BR')}</td>
                             ))}
                             <td className="py-3 px-4 text-right font-bold text-slate-900">{totalDiscados.toLocaleString('pt-BR')}</td>
                           </tr>
@@ -1099,13 +829,13 @@ export default function App() {
             );
           })()}
 
-          {/* TAB 2: CAMPANHAS (Upload e Controle) */}
+          {/* TAB 2: CAMPANHAS / UPLOAD */}
           {activeTab === 'campaigns' && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               
-              {/* Card de Envio */}
+              {/* Form de Upload */}
               <div className="bg-white p-8 rounded-xl border border-slate-200 shadow-sm h-fit">
-                <h3 className="text-base font-bold text-slate-800 mb-6">Importar Leads de Cobrança</h3>
+                <h3 className="text-base font-bold text-slate-800 mb-6">Importar Mailing / Nova Campanha</h3>
                 <form onSubmit={handleFileUpload} className="space-y-6">
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
@@ -1113,66 +843,68 @@ export default function App() {
                     </label>
                     <input 
                       type="text" 
-                      placeholder="Ex: Cobrança Residencial Vencimento Agosto"
+                      placeholder="Ex: Campanha Acordo Vero 01"
                       value={campaignName}
                       onChange={(e) => setCampaignName(e.target.value)}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-vero-magenta"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#890038]"
                     />
                   </div>
 
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Plataforma de Discagem
+                      Discador / Gateway
                     </label>
-                    <select 
-                      value="dialddm" 
+                    <input 
+                      type="text" 
+                      value="Dialog DDM Voice AI (MeuDiscador)"
                       disabled
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none font-semibold text-slate-700 cursor-not-allowed"
-                    >
-                      <option value="dialddm">Dialog DDM (Infra Própria / Oktor 500ch)</option>
-                    </select>
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-semibold text-slate-700 cursor-not-allowed"
+                    />
                   </div>
 
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Agente de Voz Dialog DDM
+                      ID do Assistente / Agente IA (Dialog DDM)
                     </label>
-                    <select 
-                      value="6" 
-                      disabled
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none font-semibold text-slate-700 cursor-not-allowed"
-                    >
-                      <option value="6">Assistente #6 - Verô - Cobrança Recente</option>
-                    </select>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: 5"
+                      value={assistantId}
+                      onChange={(e) => setAssistantId(e.target.value)}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#890038]"
+                    />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Informe o ID do agente que você criou no painel do Dialog.
+                    </span>
                   </div>
 
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Linha / Tronco Telefônico (BINA Dialog DDM)
+                      Linha / Tronco Telefônico (BINA)
                     </label>
-                    <select 
-                      value="oktor_sip_500ch" 
-                      disabled
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:outline-none font-semibold text-slate-700 cursor-not-allowed"
-                    >
-                      <option value="oktor_sip_500ch">OKTOR SIP (Tronco 500 Canais Oktor Telecom)</option>
-                    </select>
+                    <input 
+                      type="text" 
+                      placeholder="Ex: oktor_sip_500ch"
+                      value={phoneNumberId}
+                      onChange={(e) => setPhoneNumberId(e.target.value)}
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#890038]"
+                    />
                   </div>
 
                   <div>
                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                      Planilha (.XLSX, .XLS, .CSV)
+                      Planilha de Leads (.XLSX, .CSV)
                     </label>
                     <div 
                       onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-vero-magenta transition cursor-pointer bg-slate-50 flex flex-col items-center justify-center space-y-2"
+                      className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-[#890038] transition cursor-pointer bg-slate-50 flex flex-col items-center justify-center space-y-2"
                     >
                       <UploadCloud size={32} className="text-slate-400" />
                       <span className="text-xs text-slate-600 font-semibold block">
-                        {file ? file.name : 'Arraste ou clique para selecionar o arquivo'}
+                        {file ? file.name : 'Clique para selecionar a planilha'}
                       </span>
                       <span className="text-[10px] text-slate-400 block">
-                        Colunas sugeridas: Nome, Telefone, Valor, Vencimento
+                        Colunas recomendadas: Nome, Telefone, CPF
                       </span>
                       <input 
                         ref={fileInputRef}
@@ -1205,38 +937,27 @@ export default function App() {
                   <button 
                     type="submit"
                     disabled={uploading}
-                    className="w-full bg-vero-magenta text-white py-3 rounded-lg text-sm font-semibold hover:bg-rose-700 disabled:bg-rose-400 transition flex items-center justify-center gap-2"
+                    className="w-full bg-[#890038] text-white py-3 rounded-lg text-sm font-semibold hover:bg-[#72002E] disabled:bg-slate-300 transition flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <UploadCloud size={16} />
-                    {uploading ? 'Importando Leads...' : 'Criar Campanha e Importar'}
+                    {uploading ? 'Importando Leads...' : 'Criar Campanha e Iniciar'}
                   </button>
                 </form>
-
-                <div className="mt-6 border-t border-slate-100 pt-4 flex items-center justify-between text-xs">
-                  <span className="text-slate-400">Quer testar agora?</span>
-                  <a 
-                    href={`${BACKEND_URL}/api/sample-file`}
-                    className="text-vero-magenta font-semibold hover:underline flex items-center gap-1"
-                  >
-                    <Download size={12} />
-                    Baixar planilha modelo
-                  </a>
-                </div>
               </div>
 
-              {/* Lista Completa das Campanhas */}
+              {/* Lista das Campanhas */}
               <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm lg:col-span-2 space-y-4">
-                <h3 className="text-base font-bold text-slate-800">Listagem de Campanhas</h3>
+                <h3 className="text-base font-bold text-slate-800">Campanhas Criadas</h3>
                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                   {campaigns.length > 0 ? (
                     campaigns.map(c => {
-                      const pct = c.total_leads > 0 ? Math.round((c.processed_leads / c.total_leads) * 100) : 0;
                       const isSelected = selectedCampaignId === c.id;
+                      const pct = c.total_leads > 0 ? Math.round((c.processed_leads / c.total_leads) * 100) : 0;
                       return (
                         <div 
                           key={c.id} 
                           className={`p-4 rounded-xl border transition cursor-pointer flex flex-col justify-between md:flex-row md:items-center gap-4 ${
-                            isSelected ? 'border-vero-magenta bg-rose-50/10' : 'border-slate-200 hover:bg-slate-50'
+                            isSelected ? 'border-[#890038] bg-rose-50/20' : 'border-slate-200 hover:bg-slate-50'
                           }`}
                           onClick={() => handleCampaignSelect(c.id)}
                         >
@@ -1248,66 +969,43 @@ export default function App() {
                               } ${
                                 c.status === 'processing' && 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse'
                               } ${
-                                c.status === 'failed' && 'bg-red-50 text-red-700 border border-red-200'
-                              } ${
                                 c.status === 'pending' && 'bg-slate-50 text-slate-600 border border-slate-200'
                               }`}>
-                                {c.status === 'completed' && 'Concluído'}
-                                {c.status === 'processing' && 'Disparando'}
-                                {c.status === 'failed' && 'Pausada'}
-                                {c.status === 'pending' && 'Pendente'}
+                                {c.status.toUpperCase()}
                               </span>
                             </div>
-                            <div className="text-xs text-slate-400 flex flex-wrap gap-x-4 gap-y-1">
-                              <span>Total: <strong>{c.total_leads} leads</strong></span>
-                              <span>Data: <strong>{new Date(c.created_at).toLocaleString('pt-BR')}</strong></span>
+                            <div className="text-xs text-slate-400 flex items-center gap-4">
+                              <span>Total: <strong>{c.total_leads}</strong> leads</span>
+                              <span>Discados: <strong>{c.processed_leads}</strong></span>
+                              <span>Atendidas: <strong className="text-emerald-600">{c.successful_calls}</strong></span>
                             </div>
-                            <div className="flex items-center gap-2 max-w-sm pt-1">
-                              <div className="w-full bg-slate-100 rounded-full h-1.5">
-                                <div 
-                                  className="bg-vero-magenta h-1.5 rounded-full" 
-                                  style={{ width: `${pct}%` }}
-                                ></div>
-                              </div>
-                              <span className="text-[10px] font-bold text-slate-500">{pct}%</span>
+                            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                              <div className="bg-[#890038] h-full rounded-full" style={{ width: `${pct}%` }} />
                             </div>
                           </div>
 
-                          {/* Ações */}
                           <div className="flex items-center gap-2">
-                            {(c.status === 'pending' || c.status === 'failed' || c.status === 'paused') && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); handleStartCampaign(c.id); }}
-                                className="px-3 py-1.5 bg-green-600 text-white rounded-md text-xs font-semibold hover:bg-green-700 transition flex items-center gap-1"
-                                title="Continuar discando os leads pendentes de onde parou"
-                              >
-                                <Play size={12} />
-                                {c.status === 'pending' ? 'Disparar' : 'Continuar'}
-                              </button>
-                            )}
-                            {c.status === 'processing' && (
+                            {c.status === 'processing' ? (
                               <button 
                                 onClick={(e) => { e.stopPropagation(); handleCancelCampaign(c.id); }}
-                                className="px-3 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 rounded-md text-xs font-semibold hover:bg-amber-100 transition flex items-center gap-1 font-bold"
+                                className="px-3 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 rounded-lg text-xs font-semibold hover:bg-amber-100 transition"
                               >
-                                ⏸️ Pausar
+                                Pausar
+                              </button>
+                            ) : (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleStartCampaign(c.id); }}
+                                className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition flex items-center gap-1"
+                              >
+                                <Play size={12} /> Continuar
                               </button>
                             )}
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleDeleteCampaign(c.id); }}
-                              className="p-1.5 text-slate-400 hover:text-red-500 transition hover:bg-red-50 rounded"
-                              title="Excluir campanha"
-                            >
-                              <Trash2 size={16} />
-                            </button>
                           </div>
                         </div>
                       );
                     })
                   ) : (
-                    <div className="text-center py-12 text-slate-400">
-                      Nenhuma campanha cadastrada no banco.
-                    </div>
+                    <p className="text-xs text-slate-400 py-6 text-center">Nenhuma campanha cadastrada ainda.</p>
                   )}
                 </div>
               </div>
@@ -1315,159 +1013,122 @@ export default function App() {
             </div>
           )}
 
-          {/* TAB 3: LEADS (Visualização Detalhada) */}
+          {/* TAB 3: VISUALIZADOR DE LEADS */}
           {activeTab === 'leads' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
-              
-              {/* Seletor de Campanha no Topo */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-6">
-                <div className="space-y-1">
-                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Campanha Selecionada</span>
-                  <select 
-                    value={selectedCampaignId || 'all'} 
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      handleCampaignSelect(val === 'all' ? 'all' : Number(val));
-                    }}
-                    className="px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-700 bg-white focus:outline-none focus:border-vero-magenta"
-                  >
-                    <option value="all">🔍 Todas as Campanhas (Busca Global)</option>
-                    {campaigns.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} ({c.total_leads} leads)
-                      </option>
-                    ))}
-                  </select>
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">Visualizador de Leads</h3>
+                  <p className="text-xs text-slate-400">Leads discados com transcrição completa e gravação em áudio</p>
                 </div>
 
-                {/* Pesquisa e Filtros */}
-                <div className="flex flex-col sm:flex-row items-center gap-3">
-                  {/* Filtro de Status */}
-                  <div className="flex items-center gap-2">
-                    <Filter size={16} className="text-slate-400" />
-                    <select 
-                      value={statusFilter}
-                      onChange={(e) => {
-                        const newFilter = e.target.value;
-                        setStatusFilter(newFilter);
-                        setLeadsPage(1);
-                        if (selectedCampaignId) fetchLeads(selectedCampaignId, 1, newFilter);
-                      }}
-                      className="px-3 py-2 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-vero-magenta"
-                    >
-                      <option value="all">Todos os Leads</option>
-                      <option value="delivered">🟢 Somente Ligações Atendidas</option>
-                      <option value="sms_delivered">📲 Somente SMS Entregues</option>
-                      <option value="failed">🔴 Somente Não Atendidas</option>
-                      <option value="pending">⏳ Pendentes</option>
-                    </select>
-                  </div>
-
+                <div className="flex items-center gap-3">
                   <div className="relative">
-                    <Search size={16} className="absolute left-3 top-3 text-slate-400" />
+                    <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
                     <input 
                       type="text" 
-                      placeholder="Buscar por Nome ou Telefone..."
+                      placeholder="Buscar por Nome, Telefone ou CPF..."
                       value={searchTerm}
                       onChange={(e) => {
                         const val = e.target.value;
                         setSearchTerm(val);
                         setLeadsPage(1);
-                        if (selectedCampaignId) fetchLeads(selectedCampaignId, 1, statusFilter, val);
+                        fetchLeads(selectedCampaignId, 1, statusFilter, val);
                       }}
-                      className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm w-full sm:w-64 focus:outline-none focus:border-vero-magenta"
+                      className="pl-9 pr-4 py-1.5 border border-slate-200 rounded-lg text-xs w-64 focus:outline-none focus:border-[#890038]"
                     />
                   </div>
+                  <select 
+                    value={statusFilter}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value);
+                      setLeadsPage(1);
+                      fetchLeads(selectedCampaignId, 1, e.target.value, searchTerm);
+                    }}
+                    className="border border-slate-200 rounded-lg px-3 py-1.5 text-xs text-slate-700 bg-transparent focus:outline-none"
+                  >
+                    <option value="all">Todos os Status</option>
+                    <option value="completed">Atendidas</option>
+                    <option value="failed">Não Atendidas</option>
+                    <option value="calling">Chamando</option>
+                    <option value="pending">Pendentes</option>
+                  </select>
                 </div>
               </div>
 
-              {/* Tabela dos Leads */}
+              {/* Tabela */}
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-slate-600">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-400 font-semibold">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50/80 text-slate-500 font-semibold border-b border-slate-200/80">
+                    <tr>
                       <th className="py-3 px-4">Nome do Cliente</th>
                       <th className="py-3 px-4">Telefone</th>
-                      <th className="py-3 px-4">Valor</th>
-                      <th className="py-3 px-4">Vencimento</th>
+                      <th className="py-3 px-4">CPF</th>
+                      <th className="py-3 px-4">Status da Chamada</th>
+                      <th className="py-3 px-4">Duração</th>
                       <th className="py-3 px-4">Ocorrência (Tabulação)</th>
-                      <th className="py-3 px-4">Transcrição</th>
-                      <th className="py-3 px-4">Status SMS</th>
-                      <th className="py-3 px-4">Log do SMS</th>
+                      <th className="py-3 px-4">Gravação</th>
+                      <th className="py-3 px-4">Diálogo (IA)</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs">
-                    {filteredLeads.length > 0 ? (
-                      filteredLeads.map(l => (
-                        <tr key={l.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="py-3 px-4 font-semibold text-slate-700">{l.name}</td>
+                  <tbody className="divide-y divide-slate-100">
+                    {leads.length > 0 ? (
+                      leads.map(l => (
+                        <tr key={l.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4 font-semibold text-slate-800">{l.name}</td>
                           <td className="py-3 px-4">{l.phone}</td>
-                          <td className="py-3 px-4 font-bold text-slate-700">{formatBRL(l.debt_value)}</td>
-                          <td className="py-3 px-4">{l.due_date}</td>
+                          <td className="py-3 px-4 text-slate-500">{l.cpf || '-'}</td>
                           <td className="py-3 px-4">
-                            {(() => {
-                              const occ = (l.occurrence || (l.call_status === 'completed' ? 'ATENDEU - SMS ENVIADO' : 'NÃO ATENDEU')).toUpperCase();
-                              const isAnswered = (occ.startsWith('ATENDEU') && !occ.includes('NÃO')) || occ.includes('CONFIRMOU') || occ.includes('ENVIO SMS');
-                              const is3Days = occ.includes('3 DIAS') || occ.includes('QUARENTENA');
-
-                              const badgeColor = isAnswered 
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                                : is3Days 
-                                ? 'bg-amber-50 text-amber-700 border-amber-200'
-                                : 'bg-rose-50 text-rose-700 border-rose-200';
-
-                              return (
-                                <span className={`px-2 py-0.5 rounded border font-bold text-[10px] inline-block ${badgeColor}`}>
-                                  {l.occurrence || (l.call_status === 'completed' ? 'ATENDEU - SMS ENVIADO' : 'NÃO ATENDEU')}
-                                </span>
-                              );
-                            })()}
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              l.call_status === 'completed' && 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            } ${
+                              l.call_status === 'calling' && 'bg-sky-50 text-sky-700 border border-sky-200 animate-pulse'
+                            } ${
+                              l.call_status === 'failed' && 'bg-rose-50 text-rose-700 border border-rose-200'
+                            } ${
+                              l.call_status === 'pending' && 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                              {l.call_status === 'completed' ? 'Atendida' : (l.call_status === 'calling' ? 'Chamando' : (l.call_status === 'failed' ? 'Não Atendeu' : 'Pendente'))}
+                            </span>
                           </td>
-
-                          {/* Transcrição */}
+                          <td className="py-3 px-4 text-slate-600">
+                            {l.call_duration ? `${l.call_duration}s` : '-'}
+                          </td>
                           <td className="py-3 px-4">
-                            {(l.call_id || l.transcript) ? (
-                              <button
+                            <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold text-[10px] border border-slate-200">
+                              {l.occurrence || (l.call_status === 'completed' ? 'ATENDIDA' : (l.call_status === 'failed' ? 'NÃO ATENDEU' : 'PENDENTE'))}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {l.recording_url ? (
+                              <audio 
+                                controls 
+                                src={l.recording_url} 
+                                className="h-7 w-36"
+                              />
+                            ) : (
+                              <span className="text-slate-300 text-[10px] italic">Sem áudio</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            {(l.transcript || l.call_id) ? (
+                              <button 
                                 onClick={() => handleOpenTranscriptModal(l)}
-                                className="px-2 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded text-[10px] font-bold hover:bg-purple-100 transition flex items-center gap-1"
+                                className="px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[10px] font-bold hover:bg-indigo-100 transition flex items-center gap-1 cursor-pointer"
                               >
                                 <MessageSquare size={12} />
-                                Ver Diálogo
+                                Transcrição
                               </button>
                             ) : (
                               <span className="text-slate-300 text-[10px] italic">Sem texto</span>
                             )}
-                          </td>
-
-                          {/* Status SMS */}
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded font-bold ${
-                              l.sms_status === 'completed' && 'bg-green-50 text-green-700'
-                            } ${
-                              l.sms_status === 'processing' && 'bg-amber-50 text-amber-700'
-                            } ${
-                              l.sms_status === 'sending' && 'bg-sky-50 text-sky-700 animate-pulse'
-                            } ${
-                              l.sms_status === 'failed' && 'bg-slate-100 text-slate-600'
-                            } ${
-                              l.sms_status === 'pending' && 'bg-slate-100 text-slate-600'
-                            }`}>
-                              {l.sms_status === 'completed' && 'Entregue'}
-                              {l.sms_status === 'processing' && 'Fila n8n'}
-                              {l.sms_status === 'sending' && 'Enviando...'}
-                              {l.sms_status === 'failed' && 'Não Enviado'}
-                              {l.sms_status === 'pending' && 'Aguardando'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 max-w-[200px] truncate text-[10px] text-slate-400" title={l.sms_log}>
-                            {l.sms_log || 'Nenhum registro'}
                           </td>
                         </tr>
                       ))
                     ) : (
                       <tr>
                         <td colSpan={8} className="py-8 text-center text-slate-400">
-                          Nenhum lead encontrado para esta busca/campanha.
+                          Nenhum lead encontrado.
                         </td>
                       </tr>
                     )}
@@ -1478,89 +1139,24 @@ export default function App() {
               {/* Paginação */}
               <div className="flex items-center justify-between border-t border-slate-100 pt-4 text-xs">
                 <span className="text-slate-400">
-                  Mostrando leads do lote (Total: <strong>{leadsTotalCount}</strong>)
+                  Total de leads: <strong>{leadsTotalCount}</strong> (Página {leadsPage} de {leadsTotalPages || 1})
                 </span>
                 <div className="flex items-center gap-2">
                   <button 
                     disabled={leadsPage === 1}
-                    onClick={() => { setLeadsPage(p => p - 1); fetchLeads(selectedCampaignId!, leadsPage - 1); }}
-                    className="p-1 border border-slate-200 rounded disabled:opacity-50 hover:bg-slate-50 transition"
+                    onClick={() => { setLeadsPage(p => p - 1); fetchLeads(selectedCampaignId, leadsPage - 1, statusFilter, searchTerm); }}
+                    className="p-1 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50 transition cursor-pointer"
                   >
                     <ChevronLeft size={16} />
                   </button>
-                  <span className="font-semibold text-slate-700">Página {leadsPage} de {leadsTotalPages}</span>
                   <button 
-                    disabled={leadsPage === leadsTotalPages}
-                    onClick={() => { setLeadsPage(p => p + 1); fetchLeads(selectedCampaignId!, leadsPage + 1); }}
-                    className="p-1 border border-slate-200 rounded disabled:opacity-50 hover:bg-slate-50 transition"
+                    disabled={leadsPage >= leadsTotalPages}
+                    onClick={() => { setLeadsPage(p => p + 1); fetchLeads(selectedCampaignId, leadsPage + 1, statusFilter, searchTerm); }}
+                    className="p-1 border border-slate-200 rounded disabled:opacity-40 hover:bg-slate-50 transition cursor-pointer"
                   >
                     <ChevronRight size={16} />
                   </button>
                 </div>
-              </div>
-
-            </div>
-          )}
-
-          {/* TAB 4: RELATÓRIOS */}
-          {activeTab === 'reports' && (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div>
-                  <h3 className="text-base font-bold text-slate-800">Exportar Campanhas de Recuperação</h3>
-                  <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
-                    Baixe o resultado completo das ligações VAPI e envios de SMS. O relatório contém as transcrições das chamadas e logs de SMS.
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-500">Filtrar Exportação:</span>
-                  <select
-                    value={exportOccurrenceFilter}
-                    onChange={(e) => setExportOccurrenceFilter(e.target.value)}
-                    className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:border-vero-magenta"
-                  >
-                    <option value="all">Todas as Ocorrências</option>
-                    <option value="PROMESSA BOLETO">PROMESSA BOLETO</option>
-                    <option value="PROMESSA PIX">PROMESSA PIX</option>
-                    <option value="ALEGA PAGAMENTO - SEM COMPROVANTE">ALEGA PAGAMENTO - SEM COMPROVANTE</option>
-                    <option value="FALECIDO">FALECIDO</option>
-                    <option value="CLIENTE DESCONHECIDO">CLIENTE DESCONHECIDO</option>
-                    <option value="ROBO SOLICITA ATENDIMENTO HUMANO ">ROBO SOLICITA ATENDIMENTO HUMANO</option>
-                    <option value="TENTATIVA - MAQUINA MENSAGEM AUTOMATICA">TENTATIVA - CAIXA POSTAL</option>
-                    <option value="TENTATIVA - ABANDONO">TENTATIVA - ABANDONO</option>
-                    <option value="TENTATIVA - NÃO ATENDE">TENTATIVA - NÃO ATENDE</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden mt-6">
-                {campaigns.map(c => (
-                  <div key={c.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition">
-                    <div>
-                      <h4 className="font-bold text-sm text-slate-700">{c.name}</h4>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Criada em {new Date(c.created_at).toLocaleString('pt-BR')} • {c.total_leads} leads processados
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <a 
-                        href={`${BACKEND_URL}/api/campaigns/${c.id}/export?filter=answered`}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 transition shadow-sm"
-                        title="Baixar lista formatada para Excel com os leads atendidos e linhas digitáveis"
-                      >
-                        <Download size={14} />
-                        📥 Apenas Atendidas ({c.successful_calls})
-                      </a>
-                      <a 
-                        href={`${BACKEND_URL}/api/campaigns/${c.id}/export?occurrence=${exportOccurrenceFilter !== 'all' ? encodeURIComponent(exportOccurrenceFilter) : ''}`}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-vero-magenta text-white text-xs font-semibold rounded-lg hover:bg-rose-700 transition"
-                      >
-                        <Download size={14} />
-                        Exportar Todos
-                      </a>
-                    </div>
-                  </div>
-                ))}
               </div>
             </div>
           )}
@@ -1568,44 +1164,75 @@ export default function App() {
         </div>
       </div>
 
-      {/* Modal de Transcrição */}
+      {/* Modal de Transcrição e Gravação */}
       {selectedTranscriptLead && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-bold text-slate-800 text-base">{selectedTranscriptLead.name}</h3>
-                <span className="text-xs text-slate-400">{selectedTranscriptLead.phone} | {formatBRL(selectedTranscriptLead.debt_value)}</span>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#890038]/10 text-[#890038] flex items-center justify-center">
+                  <PhoneCall size={18} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-900 text-sm">{selectedTranscriptLead.name}</h3>
+                  <p className="text-xs text-slate-400">{selectedTranscriptLead.phone} | Duração: {selectedTranscriptLead.call_duration || 0}s</p>
+                </div>
               </div>
               <button 
                 onClick={() => setSelectedTranscriptLead(null)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 space-y-3 p-3 bg-slate-50 rounded-xl text-xs">
-              {(selectedTranscriptLead.recording_url || (selectedTranscriptLead.call_id && (Number(selectedTranscriptLead.call_duration || 0) > 0 || (selectedTranscriptLead.call_log && !selectedTranscriptLead.call_log.includes('Duração: 0s'))))) ? (
-                <div className="bg-white p-3 rounded-lg border border-slate-200 shadow-sm space-y-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Gravação do Áudio da Chamada</span>
-                  <audio controls src={`${BACKEND_URL}/api/leads/${selectedTranscriptLead.id}/audio?t=${Date.now()}`} className="w-full h-8" />
-                </div>
-              ) : (
-                <div className="bg-amber-50 p-2.5 rounded-lg border border-amber-200 text-amber-800 text-[11px] font-medium flex items-center gap-1.5">
-                  <span>ℹ️ Gravação indisponível: O cliente não atendeu a ligação (Duração: 0s).</span>
-                </div>
-              )}
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Transcrição / Histórico da Ligação</span>
-              <div className="whitespace-pre-wrap font-mono text-slate-700 leading-relaxed bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                {cleanDisplayTranscript(selectedTranscriptLead.transcript || selectedTranscriptLead.call_log)}
+            {/* Gravação se houver */}
+            {selectedTranscriptLead.recording_url && (
+              <div className="bg-indigo-50/50 border-b border-indigo-100 px-6 py-3 flex items-center gap-3">
+                <Volume2 size={16} className="text-indigo-600 shrink-0" />
+                <span className="text-xs font-semibold text-indigo-900 shrink-0">Áudio da Gravação:</span>
+                <audio controls src={selectedTranscriptLead.recording_url} className="h-8 flex-1" />
+              </div>
+            )}
+
+            {/* Conteúdo do Diálogo */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1 bg-slate-50/30">
+              <div className="space-y-3">
+                {cleanDisplayTranscript(selectedTranscriptLead.transcript)
+                  .split('\n')
+                  .filter(line => line.trim().length > 0)
+                  .map((line, idx) => {
+                    const isAgent = line.startsWith('Agente:') || line.startsWith('Vero:');
+                    const isClient = line.startsWith('Cliente:');
+                    const text = line.replace(/^(Agente|Vero|Cliente|Assistente|Bot|User):/i, '').trim();
+
+                    return (
+                      <div 
+                        key={idx} 
+                        className={`flex flex-col ${isAgent ? 'items-start' : 'items-end'}`}
+                      >
+                        <span className="text-[10px] font-bold text-slate-400 mb-1 px-1">
+                          {isAgent ? 'Agente de Voz IA' : (isClient ? selectedTranscriptLead.name : 'Interlocutor')}
+                        </span>
+                        <div 
+                          className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-xs ${
+                            isAgent 
+                              ? 'bg-white border border-slate-200 text-slate-800 shadow-2xs' 
+                              : 'bg-[#890038] text-white shadow-2xs'
+                          }`}
+                        >
+                          {text || line}
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             </div>
 
-            <div className="pt-2 text-right">
+            <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
               <button 
                 onClick={() => setSelectedTranscriptLead(null)}
-                className="px-4 py-2 bg-slate-800 text-white rounded-lg text-xs font-semibold hover:bg-slate-900 transition"
+                className="px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
               >
                 Fechar
               </button>
@@ -1613,6 +1240,7 @@ export default function App() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -79,12 +79,8 @@ app.get('/api/dashboard/stats', (req, res) => {
           COUNT(DISTINCT l.phone) as unique_leads,
           COUNT(l.id) as total_leads,
           SUM(CASE WHEN l.call_status IN ('completed', 'failed') THEN 1 ELSE 0 END) as total_processed,
-          SUM(CASE WHEN l.call_status = 'completed' OR (l.occurrence LIKE 'ATENDEU%' AND l.occurrence NOT LIKE '%NÃO%') OR l.occurrence LIKE '%LIGAÇÃO MUDA%' OR l.occurrence LIKE '%PROMESSA%' THEN 1 ELSE 0 END) as total_successful_calls,
-          SUM(CASE WHEN l.call_status = 'failed' OR l.occurrence LIKE '%NÃO ATENDEU%' THEN 1 ELSE 0 END) as total_failed_calls,
-          SUM(CASE WHEN l.sms_status = 'completed' THEN 1 ELSE 0 END) as total_successful_sms,
-          SUM(CASE WHEN l.sms_status = 'failed' THEN 1 ELSE 0 END) as total_failed_sms,
-          SUM(CASE WHEN l.occurrence LIKE '%3 DIAS%' OR l.occurrence LIKE '%QUARENTENA%' THEN 1 ELSE 0 END) as total_quarantine_sms,
-          COUNT(DISTINCT CASE WHEN (l.occurrence LIKE '%3 DIAS%' OR l.occurrence LIKE '%QUARENTENA%') THEN l.phone END) as total_quarantine_unique
+          SUM(CASE WHEN l.call_status = 'completed' THEN 1 ELSE 0 END) as total_successful_calls,
+          SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls
         FROM leads l
         INNER JOIN campaigns c ON l.campaign_id = c.id
         WHERE (
@@ -100,12 +96,8 @@ app.get('/api/dashboard/stats', (req, res) => {
             COUNT(DISTINCT l.phone) as unique_leads,
             COUNT(l.id) as total_leads,
             SUM(CASE WHEN l.call_status IN ('completed', 'failed') THEN 1 ELSE 0 END) as total_processed,
-            SUM(CASE WHEN l.call_status = 'completed' OR (l.occurrence LIKE 'ATENDEU%' AND l.occurrence NOT LIKE '%NÃO%') OR l.occurrence LIKE '%LIGAÇÃO MUDA%' OR l.occurrence LIKE '%PROMESSA%' THEN 1 ELSE 0 END) as total_successful_calls,
-            SUM(CASE WHEN l.call_status = 'failed' OR l.occurrence LIKE '%NÃO ATENDEU%' THEN 1 ELSE 0 END) as total_failed_calls,
-            SUM(CASE WHEN l.sms_status = 'completed' THEN 1 ELSE 0 END) as total_successful_sms,
-            SUM(CASE WHEN l.sms_status = 'failed' THEN 1 ELSE 0 END) as total_failed_sms,
-            SUM(CASE WHEN l.occurrence LIKE '%3 DIAS%' OR l.occurrence LIKE '%QUARENTENA%' THEN 1 ELSE 0 END) as total_quarantine_sms,
-            COUNT(DISTINCT CASE WHEN (l.occurrence LIKE '%3 DIAS%' OR l.occurrence LIKE '%QUARENTENA%') THEN l.phone END) as total_quarantine_unique
+            SUM(CASE WHEN l.call_status = 'completed' THEN 1 ELSE 0 END) as total_successful_calls,
+            SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls
           FROM leads l
           WHERE l.campaign_id = ?
         `;
@@ -129,91 +121,49 @@ app.get('/api/dashboard/stats', (req, res) => {
         dayCampaignsCount = activeDayCamps ? (activeDayCamps.total_campaigns || 0) : 1;
       }
 
-      const activeQuarantineRow = get(`
-        SELECT COUNT(DISTINCT phone) as count 
-        FROM leads 
-        WHERE (sms_status = 'completed' OR (call_status = 'completed' AND occurrence IS NOT NULL AND occurrence NOT LIKE 'TENTATIVA - %'))
-          AND updated_at >= datetime('now', '-3 days')
-      `) || {};
-
       return res.json({
         total_campaigns: dayCampaignsCount,
         total_leads: dayStats.unique_leads || dayStats.total_leads || 0,
         total_unique_leads: dayStats.unique_leads || dayStats.total_leads || 0,
         total_processed: dayStats.total_processed || 0,
         total_successful_calls: dayStats.total_successful_calls || 0,
-        total_failed_calls: dayStats.total_failed_calls || 0,
-        total_successful_sms: dayStats.total_successful_sms || 0,
-        total_failed_sms: dayStats.total_failed_sms || 0,
-        total_quarantine_sms: dayStats.total_quarantine_sms || 0,
-        total_quarantine_unique: dayStats.total_quarantine_unique || 0,
-        total_quarantine_active: activeQuarantineRow.count || 0,
+        total_failed_calls: dayStats.total_failed_calls || 0
       });
     }
 
-    // Sem filtro de data: totais reais calculados a partir dos leads
+    // Sem filtro de data: totais calculados a partir dos leads
     let query = `
       SELECT 
         (SELECT COUNT(id) FROM campaigns) as total_campaigns,
         COUNT(DISTINCT l.phone) as unique_leads,
         COUNT(l.id) as total_leads,
         SUM(CASE WHEN l.call_status IN ('completed', 'failed') THEN 1 ELSE 0 END) as total_processed,
-        SUM(CASE WHEN l.call_status = 'completed' OR (l.occurrence LIKE 'ATENDEU%' AND l.occurrence NOT LIKE '%NÃO%') OR l.occurrence LIKE '%LIGAÇÃO MUDA%' OR l.occurrence LIKE '%PROMESSA%' THEN 1 ELSE 0 END) as total_successful_calls,
-        SUM(CASE WHEN l.call_status = 'failed' OR l.occurrence LIKE '%NÃO ATENDEU%' THEN 1 ELSE 0 END) as total_failed_calls,
-        SUM(CASE WHEN l.sms_status = 'completed' THEN 1 ELSE 0 END) as total_successful_sms,
-        SUM(CASE WHEN l.sms_status = 'failed' THEN 1 ELSE 0 END) as total_failed_sms,
-        SUM(CASE WHEN l.occurrence LIKE '%3 DIAS%' OR l.occurrence LIKE '%QUARENTENA%' THEN 1 ELSE 0 END) as total_quarantine_sms,
-        COUNT(DISTINCT CASE WHEN (l.occurrence LIKE '%3 DIAS%' OR l.occurrence LIKE '%QUARENTENA%') THEN l.phone END) as total_quarantine_unique
+        SUM(CASE WHEN l.call_status = 'completed' THEN 1 ELSE 0 END) as total_successful_calls,
+        SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls
       FROM leads l
     `;
     const params = [];
     if (campaignId && campaignId !== 'all') {
-      query = `
-        SELECT 
-          1 as total_campaigns,
-          COUNT(DISTINCT l.phone) as unique_leads,
-          COUNT(l.id) as total_leads,
-          SUM(CASE WHEN l.call_status IN ('completed', 'failed') THEN 1 ELSE 0 END) as total_processed,
-          SUM(CASE WHEN l.call_status = 'completed' OR (l.occurrence LIKE 'ATENDEU%' AND l.occurrence NOT LIKE '%NÃO%') OR l.occurrence LIKE '%LIGAÇÃO MUDA%' OR l.occurrence LIKE '%PROMESSA%' THEN 1 ELSE 0 END) as total_successful_calls,
-          SUM(CASE WHEN l.call_status = 'failed' OR l.occurrence LIKE '%NÃO ATENDEU%' THEN 1 ELSE 0 END) as total_failed_calls,
-          SUM(CASE WHEN l.sms_status = 'completed' THEN 1 ELSE 0 END) as total_successful_sms,
-          SUM(CASE WHEN l.sms_status = 'failed' THEN 1 ELSE 0 END) as total_failed_sms,
-          SUM(CASE WHEN l.occurrence LIKE '%3 DIAS%' OR l.occurrence LIKE '%QUARENTENA%' THEN 1 ELSE 0 END) as total_quarantine_sms,
-          COUNT(DISTINCT CASE WHEN (l.occurrence LIKE '%3 DIAS%' OR l.occurrence LIKE '%QUARENTENA%') THEN l.phone END) as total_quarantine_unique
-        FROM leads l
-        WHERE l.campaign_id = ?
-      `;
+      query += ' WHERE l.campaign_id = ?';
       params.push(campaignId);
     }
 
-    const stats = get(query, params) || {};
+    const overallStats = get(query, params) || {};
 
-    const activeQuarantineRow = get(`
-      SELECT COUNT(DISTINCT phone) as count 
-      FROM leads 
-      WHERE (sms_status = 'completed' OR (call_status = 'completed' AND occurrence IS NOT NULL AND occurrence NOT LIKE 'TENTATIVA - %'))
-        AND updated_at >= datetime('now', '-3 days')
-    `) || {};
-
-    const response = {
-      total_campaigns: stats.total_campaigns || 0,
-      total_leads: stats.unique_leads || stats.total_leads || 0,
-      total_unique_leads: stats.unique_leads || stats.total_leads || 0,
-      total_processed: stats.total_processed || 0,
-      total_successful_calls: stats.total_successful_calls || 0,
-      total_failed_calls: stats.total_failed_calls || 0,
-      total_successful_sms: stats.total_successful_sms || 0,
-      total_failed_sms: stats.total_failed_sms || 0,
-      total_quarantine_sms: stats.total_quarantine_sms || 0,
-      total_quarantine_unique: stats.total_quarantine_unique || 0,
-      total_quarantine_active: activeQuarantineRow.count || 0,
-    };
-
-    res.json(response);
+    res.json({
+      total_campaigns: campaignId && campaignId !== 'all' ? 1 : (overallStats.total_campaigns || 0),
+      total_leads: overallStats.unique_leads || overallStats.total_leads || 0,
+      total_unique_leads: overallStats.unique_leads || overallStats.total_leads || 0,
+      total_processed: overallStats.total_processed || 0,
+      total_successful_calls: overallStats.total_successful_calls || 0,
+      total_failed_calls: overallStats.total_failed_calls || 0
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Erro ao buscar estatísticas do dashboard:', error);
+    res.status(500).json({ error: 'Erro ao buscar estatísticas.' });
   }
 });
+
 
 /**
  * Rota para obter o resumo de ocorrências agrupadas para a dashboard (com suporte a data)
@@ -289,9 +239,7 @@ app.get('/api/dashboard/hourly-stats', (req, res) => {
         hourNum: h,
         discados: 0,
         atendeu: 0,
-        naoAtendeu: 0,
-        quarentena3Dias: 0,
-        smsEnviados: 0
+        naoAtendeu: 0
       };
     }
 
@@ -299,8 +247,6 @@ app.get('/api/dashboard/hourly-stats', (req, res) => {
       SELECT 
         CAST(strftime('%H', datetime(updated_at, '-3 hours')) AS INTEGER) as hour_num,
         call_status,
-        sms_status,
-        occurrence,
         COUNT(id) as count
       FROM leads
       WHERE call_status IN ('completed', 'failed') AND updated_at IS NOT NULL
@@ -318,7 +264,7 @@ app.get('/api/dashboard/hourly-stats', (req, res) => {
     }
 
     query += `
-      GROUP BY hour_num, call_status, sms_status, occurrence
+      GROUP BY hour_num, call_status
     `;
 
     const rows = all(query, params);
@@ -328,21 +274,10 @@ app.get('/api/dashboard/hourly-stats', (req, res) => {
       if (hoursMap[h]) {
         const cnt = row.count;
         hoursMap[h].discados += cnt;
-
-        const occ = (row.occurrence || '').toUpperCase();
-        const isAnswered = row.call_status === 'completed' || (occ.startsWith('ATENDEU') && !occ.includes('NÃO'));
-        const is3Days = occ.includes('3 DIAS') || occ.includes('QUARENTENA');
-
-        if (isAnswered) {
+        if (row.call_status === 'completed') {
           hoursMap[h].atendeu += cnt;
-        } else if (is3Days) {
-          hoursMap[h].quarentena3Dias += cnt;
         } else {
           hoursMap[h].naoAtendeu += cnt;
-        }
-
-        if (row.sms_status === 'completed' || occ.includes('ENVIO SMS') || occ.includes('SMS ENVIADO')) {
-          hoursMap[h].smsEnviados += cnt;
         }
       }
     }
@@ -1236,15 +1171,7 @@ app.post('/api/campaigns/upload', upload.single('file'), async (req, res) => {
     );
     const campaignId = campaignResult.lastInsertRowid;
 
-    // 3. Inserir os leads em lote usando transação nativa para alta performance com pré-trava de quarentena
-    const checkQuarantineStmt = db.prepare(`
-      SELECT id FROM leads 
-      WHERE (phone = ? OR phone LIKE '%' || ? OR REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', '') LIKE '%' || ?)
-        AND (sms_status = 'completed' OR (call_status = 'completed' AND occurrence IS NOT NULL AND occurrence NOT LIKE 'TENTATIVA - %')) 
-        AND updated_at >= datetime('now', '-3 days')
-      LIMIT 1
-    `);
-
+    // 3. Inserir os leads em lote usando transação nativa para alta performance
     const insertLeadStmt = db.prepare(`
       INSERT INTO leads (campaign_id, name, phone, cpf, debt_value, due_date, barcode, dias_atraso, status_internet, email, call_status, occurrence, call_log, sms_status, sms_log, email_status, email_log)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1252,57 +1179,29 @@ app.post('/api/campaigns/upload', upload.single('file'), async (req, res) => {
 
     console.log(`[SERVER] Inserindo ${leads.length} leads no banco de dados para a campanha #${campaignId}...`);
     const startTime = Date.now();
-    let quarantinedCount = 0;
 
     run('BEGIN TRANSACTION');
     try {
       for (const lead of leads) {
-        const cleanDigits = String(lead.phone).replace(/\D/g, '');
-        const phoneSuffix = cleanDigits.length >= 8 ? cleanDigits.slice(-8) : cleanDigits;
-        
-        const recentContact = checkQuarantineStmt.get(lead.phone, phoneSuffix, phoneSuffix);
-        if (recentContact) {
-          quarantinedCount++;
-          insertLeadStmt.run(
-            campaignId, 
-            lead.name, 
-            lead.phone, 
-            lead.cpf || null,
-            lead.debt_value, 
-            lead.due_date, 
-            lead.barcode || null,
-            lead.dias_atraso || 0,
-            lead.status_internet || null,
-            lead.email || null,
-            'failed',
-            'SMS ENVIADO 3 DIAS',
-            'Ignorado: SMS já enviado nos últimos 3 dias.',
-            'failed',
-            'Ignorado: SMS já enviado nos últimos 3 dias.',
-            'failed',
-            'Ignorado: SMS já enviado nos últimos 3 dias.'
-          );
-        } else {
-          insertLeadStmt.run(
-            campaignId, 
-            lead.name, 
-            lead.phone, 
-            lead.cpf || null,
-            lead.debt_value, 
-            lead.due_date, 
-            lead.barcode || null,
-            lead.dias_atraso || 0,
-            lead.status_internet || null,
-            lead.email || null,
-            'pending',
-            null,
-            null,
-            'pending',
-            null,
-            'pending',
-            null
-          );
-        }
+        insertLeadStmt.run(
+          campaignId, 
+          lead.name, 
+          lead.phone, 
+          lead.cpf || null,
+          lead.debt_value || 0, 
+          lead.due_date || null, 
+          lead.barcode || null,
+          lead.dias_atraso || 0,
+          lead.status_internet || null,
+          lead.email || null,
+          'pending',
+          null,
+          null,
+          'pending',
+          null,
+          'pending',
+          null
+        );
       }
       run('COMMIT');
     } catch (err) {
@@ -1310,15 +1209,7 @@ app.post('/api/campaigns/upload', upload.single('file'), async (req, res) => {
       throw err;
     }
     
-    console.log(`[SERVER] Inserção concluída em ${Date.now() - startTime}ms (${quarantinedCount} leads bloqueados em quarentena). Iniciando discador para a campanha #${campaignId}...`);
-
-    // Atualizar métricas iniciais da campanha no banco
-    if (quarantinedCount > 0) {
-      run(
-        'UPDATE campaigns SET processed_leads = ?, failed_calls = ? WHERE id = ?',
-        [quarantinedCount, quarantinedCount, campaignId]
-      );
-    }
+    console.log(`[SERVER] Inserção de ${leads.length} leads concluída em ${Date.now() - startTime}ms. Iniciando discador para a campanha #${campaignId}...`);
 
     // Acionar robô de discagem automaticamente
     const { triggerCampaignProcessor } = require('./services/campaignExecutor.js');
@@ -1612,50 +1503,87 @@ app.post('/api/vapi-webhook', async (req, res) => {
     const { message } = req.body;
 
     // Se a VAPI consultar o Server URL pedindo o assistente, retorna 200 OK para usar o assistente da chamada
-    // Suporte a Tool Calls em tempo real durante a ligação (Disparo instantâneo do SMS)
+    // Suporte a Tool Calls em tempo real durante a ligação (Consultas e Acordos na API da Vero)
     if (message?.type === 'tool-calls' || message?.type === 'function-call') {
       const call = message.call;
       const leadId = call?.metadata?.lead_id;
       const toolCalls = message.toolCalls || message.tool_calls || [];
+      const veroAcordo = require('./services/veroAcordo.js');
 
-      // Verificar se algum dos tool calls é para enviar o SMS
-      const hasSmsToolCall = toolCalls.some(tc => {
-        const funcName = tc.function?.name || tc.name || '';
-        const normFunc = String(funcName).toLowerCase().replace(/[\s_-]+/g, '');
-        return normFunc.includes('enviarsms') || normFunc.includes('sms');
-      });
-
-      if (hasSmsToolCall && leadId) {
-        const lead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
-        if (lead) {
-          console.log(`[REAL-TIME SMS] Disparando SMS em tempo real para o Lead #${leadId} durante a ligação!`);
-          const { triggerN8NSmsWebhook } = require('./services/communication.js');
-          triggerN8NSmsWebhook(lead)
-            .then(smsResult => {
-              const smsStatus = smsResult.success ? 'completed' : 'failed';
-              const smsLog = smsResult.success ? `[SMS] Enviado em tempo real durante a ligação.` : smsResult.log;
-              run('UPDATE leads SET sms_status = ?, sms_log = ? WHERE id = ?', [smsStatus, smsLog, leadId]);
-            })
-            .catch(err => console.error('[REAL-TIME SMS ERROR]', err.message));
-        }
+      let leadCpf = '';
+      if (leadId) {
+        const lead = get('SELECT cpf FROM leads WHERE id = ?', [leadId]);
+        leadCpf = lead?.cpf || '';
       }
 
-      return res.status(200).json({
-        results: toolCalls.map(tc => {
-          const funcName = tc.function?.name || tc.name || '';
-          const normFunc = String(funcName).toLowerCase().replace(/[\s_-]+/g, '');
-          let resultMessage = 'Tool executada com sucesso.';
-          if (normFunc.includes('enviarsms') || normFunc.includes('sms')) {
-            resultMessage = 'SMS enviado com sucesso para o celular do cliente.';
+      const results = await Promise.all(toolCalls.map(async (tc) => {
+        const funcName = tc.function?.name || tc.name || '';
+        const normFunc = String(funcName).toLowerCase().replace(/[\s_-]+/g, '');
+        const args = tc.function?.arguments || tc.arguments || {};
+        const parsedArgs = typeof args === 'string' ? (() => { try { return JSON.parse(args); } catch(e) { return {}; } })() : args;
+        const targetCpf = parsedArgs.cpf || parsedArgs.documento || leadCpf;
+
+        console.log(`[AI TOOL CALL] Executando ${funcName} com argumentos:`, parsedArgs);
+
+        try {
+          if (normFunc.includes('check') || normFunc.includes('consultarcliente') || normFunc.includes('dadoscliente') || normFunc.includes('contratos')) {
+            const data = await veroAcordo.checkCliente(targetCpf);
+            return {
+              toolCallId: tc.id,
+              result: JSON.stringify(data)
+            };
+          } else if (normFunc.includes('simulacaovista') || normFunc.includes('simularavista') || (normFunc.includes('simulacao') && !normFunc.includes('parcela'))) {
+            const data = await veroAcordo.simularAVista(targetCpf);
+            return {
+              toolCallId: tc.id,
+              result: JSON.stringify(data)
+            };
+          } else if (normFunc.includes('simulacoes') || normFunc.includes('simularparcelas') || normFunc.includes('parcelamento')) {
+            const data = await veroAcordo.simularParcelas(targetCpf);
+            return {
+              toolCallId: tc.id,
+              result: JSON.stringify(data)
+            };
+          } else if (normFunc.includes('fecharavista') || normFunc.includes('conclusaovista') || (normFunc.includes('conclusao') && !normFunc.includes('parcela'))) {
+            const data = await veroAcordo.fecharAcordoAVista(targetCpf);
+            return {
+              toolCallId: tc.id,
+              result: JSON.stringify(data)
+            };
+          } else if (normFunc.includes('fecharparcelado') || normFunc.includes('conclusaoparcela') || normFunc.includes('parcelar')) {
+            const parcelas = parsedArgs.parcelas || parsedArgs.qtd_parcelas || 1;
+            const data = await veroAcordo.fecharAcordoParcelado(targetCpf, parcelas);
+            return {
+              toolCallId: tc.id,
+              result: JSON.stringify(data)
+            };
+          } else if (normFunc.includes('consultaracordo') || normFunc.includes('acordo')) {
+            const data = await veroAcordo.consultarAcordo(targetCpf);
+            return {
+              toolCallId: tc.id,
+              result: JSON.stringify(data)
+            };
           } else if (normFunc.includes('voicemail')) {
-            resultMessage = 'Caixa postal detectada.';
+            return {
+              toolCallId: tc.id,
+              result: 'Caixa postal detectada.'
+            };
           }
+
           return {
             toolCallId: tc.id,
-            result: resultMessage
+            result: JSON.stringify({ status: 'success', message: 'Função executada.' })
           };
-        })
-      });
+        } catch (err) {
+          console.error(`[AI TOOL CALL ERROR] Falha ao executar ${funcName}:`, err.message);
+          return {
+            toolCallId: tc.id,
+            result: JSON.stringify({ error: err.message })
+          };
+        }
+      }));
+
+      return res.status(200).json({ results });
     }
 
     if (!message || (message.type !== 'end-of-call-report' && message.status !== 'ended')) {
@@ -1774,78 +1702,10 @@ app.post('/api/vapi-webhook', async (req, res) => {
       [call?.id || null, callStatus, logText, occurrence, duration, transcriptText, recordingUrl, leadId]
     );
 
-    // Regra de Negócio: se a pessoa atendeu, envia SMS mesmo sem confirmação CPC.
-    const customerSpeechOnly = normalizeText(extractCustomerSpeech(transcriptText));
-    const isAffirmativeCpc = /\b(sim|sou eu|correto|pode falar|alô|alo|isso|confirmo|exato|esta|é ela|e ela|é ele|e ele|eu mesma|eu mesmo|palestine|posso ajudar)\b/i.test(customerSpeechOnly);
-    const hasSmsToolCallInMessages = Array.isArray(message?.artifact?.messages) && message.artifact.messages.some(m => {
-      const funcName = m.toolCalls?.[0]?.function?.name || m.name || '';
-      return String(funcName).toLowerCase().includes('sms');
-    });
-    const isCpcConfirmed = validCpcOccurrences.includes(occurrence) || (isAffirmativeCpc && customerSpeechOnly.trim().length > 0) || hasSmsToolCallInMessages;
-    const shouldSendSms = callStatus === 'completed';
-
-    if (shouldSendSms) {
-      const lead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
-      if (lead) {
-        const { triggerN8NSmsWebhook, sendLocawebEmail } = require('./services/communication.js');
-        
-        // 1. Disparar SMS se ainda não tiver sido enviado com sucesso em tempo real
-        let smsStatus = lead.sms_status;
-        let smsLogText = lead.sms_log;
-        
-        if (lead.sms_status !== 'completed') {
-          const smsResult = await triggerN8NSmsWebhook(lead);
-          smsStatus = smsResult.success ? 'completed' : 'failed';
-          smsLogText = smsResult.success
-            ? `[SMS] Enviado com sucesso: chamada atendida${isCpcConfirmed ? ' com confirmação/CPC' : ''}.`
-            : smsResult.log;
-        } else {
-          console.log(`[VAPI WEBHOOK] SMS do Lead #${leadId} já foi enviado em tempo real. Ignorando reenvio.`);
-        }
-        
-        // 2. E-mail segue restrito a CPC/ocorrências qualificadas; a regra nova é apenas SMS.
-        let emailStatus = lead.email_status || 'pending';
-        let emailLog = lead.email_log || null;
-        if (isCpcConfirmed && ((lead.email && lead.email.includes('@')) || process.env.TEST_EMAIL)) {
-          const emailResult = await sendLocawebEmail(lead);
-          emailStatus = emailResult.success ? 'completed' : 'failed';
-          emailLog = emailResult.log;
-        } else if (!isCpcConfirmed) {
-          emailStatus = 'failed';
-          emailLog = `Não enviado: chamada atendida sem confirmação CPC (${occurrence}).`;
-        } else {
-          emailStatus = 'completed';
-          emailLog = 'Não enviado: Lead sem e-mail cadastrado.';
-        }
-        
-        run(
-          `UPDATE leads 
-           SET sms_status = ?, sms_log = ?, email_status = ?, email_log = ?, updated_at = CURRENT_TIMESTAMP 
-           WHERE id = ?`,
-          [
-            smsStatus, 
-            smsLogText, 
-            emailStatus, 
-            emailLog, 
-            leadId
-          ]
-        );
-      }
-    } else {
-      const cancelReason = 'Cancelado: Ligação não atendida.';
-
-      run(
-        `UPDATE leads 
-         SET sms_status = 'failed', sms_log = ?, email_status = 'failed', email_log = ?, updated_at = CURRENT_TIMESTAMP 
-         WHERE id = ?`,
-        [cancelReason, cancelReason, leadId]
-      );
-    }
-
     // Recalcular as estatísticas totais da campanha no banco usando a função centralizada
     updateCampaignStats(campaignId);
 
-    res.json({ success: true, message: 'Webhook VAPI processado com sucesso.' });
+    res.json({ success: true, message: 'Webhook processado com sucesso.' });
 
   } catch (error) {
     console.error('[VAPI WEBHOOK ERROR]', error);
@@ -2137,62 +1997,80 @@ app.post('/api/leads/reclassify-occurrences', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`[SERVER] Vero Debt Recovery rodando em http://localhost:${PORT}`);
-  
+// =========================================================================
+// ROTAS DA API VERO ACORDO (meuacordofacil)
+// =========================================================================
+const veroAcordo = require('./services/veroAcordo.js');
+
+app.get('/api/vero/check', async (req, res) => {
   try {
-    // 0. Corrigir chamadas com duração 0s (não atenderam) para status failed e ocorrência NÃO ATENDEU
-    run(`
-      UPDATE leads 
-      SET call_status = 'failed',
-          sms_status = CASE WHEN sms_status = 'completed' AND (call_duration = 0 OR call_duration IS NULL) THEN 'failed' ELSE sms_status END,
-          occurrence = 'NÃO ATENDEU'
-      WHERE (call_duration = 0 OR call_duration IS NULL OR call_log LIKE '%Duração: 0s%')
-        AND (occurrence LIKE 'ATENDEU%' OR occurrence LIKE 'LIGAÇÃO MUDA%' OR call_status = 'completed')
-        AND occurrence NOT LIKE '%3 DIAS%'
-        AND (transcript IS NULL OR transcript = '' OR transcript LIKE '%Nenhuma transcrição%')
-    `);
-
-    // 1. Quem atendeu com duração real ou recebeu SMS -> ATENDEU - SMS ENVIADO
-    const res = run(`
-      UPDATE leads 
-      SET occurrence = 'ATENDEU - SMS ENVIADO' 
-      WHERE (call_status = 'completed' AND (call_duration > 0 OR transcript IS NOT NULL))
-         OR (sms_status = 'completed' AND call_duration > 0)
-    `);
-
-    // 2. Quem foi pulado por envio nos últimos 3 dias -> SMS ENVIADO 3 DIAS
-    run(`
-      UPDATE leads 
-      SET occurrence = 'SMS ENVIADO 3 DIAS' 
-      WHERE (call_log LIKE '%3 dias%' OR call_log LIKE '%Ignorado%' OR call_log LIKE '%Quarentena%' OR occurrence LIKE '%3 DIAS%' OR occurrence LIKE '%QUARENTENA%')
-        AND call_status != 'completed'
-    `);
-
-    // 3. Demais não atendidas -> NÃO ATENDEU
-    run(`
-      UPDATE leads 
-      SET occurrence = 'NÃO ATENDEU' 
-      WHERE (occurrence IS NULL OR occurrence = '' OR occurrence LIKE '%TENTATIVA%' OR occurrence LIKE '%DESLIGOU%' OR occurrence LIKE '%MUDA%' OR occurrence LIKE '%FALECIDO%')
-        AND call_status != 'completed'
-        AND occurrence != 'SMS ENVIADO 3 DIAS'
-    `);
-
-    // Limpar transcrições que vazaram prompt de persona
-    const dirtyLeads = all("SELECT id, transcript FROM leads WHERE transcript LIKE '%# PERSONA%' OR transcript LIKE '%Você é a Verô%'");
-    for (const dl of dirtyLeads) {
-      const clean = cleanTranscript(dl.transcript);
-      run('UPDATE leads SET transcript = ? WHERE id = ?', [clean || null, dl.id]);
-    }
-
-    if (res && res.changes > 0) {
-      console.log(`[RECLASSIFY] Leads atualizados para as 3 tabulações oficiais.`);
-      const allCamps = all('SELECT id FROM campaigns');
-      allCamps.forEach(c => updateCampaignStats(c.id));
-    }
-  } catch (e) {
-    console.error('[RECLASSIFY ERROR]', e.message);
+    const { cpf } = req.query;
+    if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+    const data = await veroAcordo.checkCliente(cpf);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/api/vero/simulacao', async (req, res) => {
+  try {
+    const { cpf } = req.query;
+    if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+    const data = await veroAcordo.simularAVista(cpf);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/vero/simulacoes', async (req, res) => {
+  try {
+    const { cpf } = req.query;
+    if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+    const data = await veroAcordo.simularParcelas(cpf);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.all('/api/vero/conclusao', async (req, res) => {
+  try {
+    const cpf = req.query.cpf || req.body?.cpf;
+    if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+    const data = await veroAcordo.fecharAcordoAVista(cpf);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.all('/api/vero/conclusao-parcela', async (req, res) => {
+  try {
+    const cpf = req.query.cpf || req.body?.cpf;
+    const parcelas = req.query.parcelas || req.body?.parcelas || 1;
+    if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+    const data = await veroAcordo.fecharAcordoParcelado(cpf, parcelas);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/vero/acordo', async (req, res) => {
+  try {
+    const { cpf } = req.query;
+    if (!cpf) return res.status(400).json({ error: 'CPF é obrigatório.' });
+    const data = await veroAcordo.consultarAcordo(cpf);
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.listen(PORT, () => {
+  console.log(`[SERVER] Plataforma de Voz IA & Vero Acordo rodando em http://localhost:${PORT}`);
 
   // Auto-retomar somente campanhas que já estavam em processamento quando o servidor reiniciou.
   try {

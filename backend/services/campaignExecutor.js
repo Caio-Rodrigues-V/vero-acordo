@@ -97,48 +97,10 @@ async function processCampaign(campaignId, force = false) {
       }
 
       await Promise.all(leads.map(async (lead) => {
-        // Trava de Quarentena de 3 Dias: Se este número recebeu SMS ou teve CPC nos últimos 3 dias, pula a discagem
-        const cleanDigits = String(lead.phone).replace(/\D/g, '');
-        const phoneSuffix = cleanDigits.length >= 8 ? cleanDigits.slice(-8) : cleanDigits;
-
-        const recentContact = get(
-          `SELECT id, name, updated_at FROM leads 
-           WHERE (phone = ? OR phone LIKE '%' || ? OR REPLACE(REPLACE(REPLACE(phone, '+', ''), '-', ''), ' ', '') LIKE '%' || ?)
-             AND id != ? 
-             AND (sms_status = 'completed' OR (call_status = 'completed' AND occurrence IS NOT NULL AND occurrence NOT LIKE 'TENTATIVA - %')) 
-             AND updated_at >= datetime('now', '-3 days')
-           LIMIT 1`,
-          [lead.phone, phoneSuffix, phoneSuffix, lead.id]
-        );
-
-        if (recentContact) {
-          console.log(`[EXECUTOR] Lead #${lead.id} (${lead.phone} - ${lead.name}) já recebeu SMS nos últimos 3 dias (Lead #${recentContact.id}).`);
-          run(
-            `UPDATE leads 
-             SET call_status = 'failed', 
-                 occurrence = 'SMS ENVIADO 3 DIAS',
-                 call_log = 'Ignorado: SMS já enviado nos últimos 3 dias.',
-                 sms_status = 'failed',
-                 sms_log = 'Ignorado: SMS já enviado nos últimos 3 dias.',
-                 email_status = 'failed',
-                 email_log = 'Ignorado: SMS já enviado nos últimos 3 dias.',
-                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?`,
-            [lead.id]
-          );
-          run(
-            `UPDATE campaigns 
-             SET processed_leads = processed_leads + 1, failed_calls = failed_calls + 1 
-             WHERE id = ?`,
-            [campaignId]
-          );
-          return;
-        }
-
-        // 4. Marcar o lead como 'calling' no banco temporariamente
+        // Marcar o lead como 'calling' no banco temporariamente
         run(
           `UPDATE leads 
-           SET call_status = 'calling', sms_status = 'pending', email_status = 'pending', call_log = 'Iniciando discagem ${provider.toUpperCase()}...', updated_at = CURRENT_TIMESTAMP 
+           SET call_status = 'calling', call_log = 'Iniciando discagem ${provider.toUpperCase()}...', updated_at = CURRENT_TIMESTAMP 
            WHERE id = ?`,
           [lead.id]
         );

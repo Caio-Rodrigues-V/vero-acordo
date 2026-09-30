@@ -30,3 +30,18 @@ backend/uploads/*
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Temporary outputs and reports
+outputs/
+*.docx
+*.pdf
+backend/calculate_vapi_minutes.js
+backend/generate_pdf.js
+backend/test_quarantine_simulation.js
+backend/scripts/resendTodayAnsweredSms.js
+*.xlsx
+*.xls
+*.csv
+backend/*.json
+backend/*.py
+DOCUMENTACAO_SUPER_TECNICA_VERO.md

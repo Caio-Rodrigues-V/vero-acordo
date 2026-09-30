@@ -5,100 +5,6 @@ dotenv.config({ path: path.join(__dirname, '../../.env') });
 dotenv.config();
 
 const { get, run } = require('../db.js');
-const { FIRST_MESSAGE_TEMPLATE } = require('../config/agentPrompt.js');
-
-/**
- * Converte valor float em BRL para extenso em Português
- */
-function numberToWordsBRL(amount) {
-  const units = ["", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
-  const teens = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
-  const tens = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
-  const hundreds = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
-
-  function convertGroup(n) {
-    if (n === 100) return "cem";
-    let words = [];
-    const h = Math.floor(n / 100);
-    const t = Math.floor((n % 100) / 10);
-    const u = n % 10;
-
-    if (h > 0) words.push(hundreds[h]);
-    if (t === 1) {
-      words.push(teens[u]);
-    } else {
-      if (t > 0) words.push(tens[t]);
-      if (u > 0) words.push(units[u]);
-    }
-    return words.filter(Boolean).join(" e ");
-  }
-
-  const parts = parseFloat(amount).toFixed(2).split(".");
-  const reais = parseInt(parts[0], 10);
-  const centavos = parseInt(parts[1], 10);
-
-  let reaisStr = "";
-  if (reais === 0) {
-    reaisStr = "zero reais";
-  } else if (reais === 1) {
-    reaisStr = "um real";
-  } else {
-    const thousands = Math.floor(reais / 1000);
-    const remainder = reais % 1000;
-    let partsStr = [];
-    if (thousands > 0) {
-      partsStr.push(thousands === 1 ? "mil" : convertGroup(thousands) + " mil");
-    }
-    if (remainder > 0) {
-      partsStr.push(convertGroup(remainder));
-    }
-    reaisStr = partsStr.join(" e ") + " reais";
-  }
-
-  let centavosStr = "";
-  if (centavos > 0) {
-    if (centavos === 1) {
-      centavosStr = "um centavo";
-    } else {
-      centavosStr = convertGroup(centavos) + " centavos";
-    }
-  }
-
-  if (reaisStr && centavosStr) {
-    return `${reaisStr} e ${centavosStr}`;
-  }
-  return reaisStr || centavosStr;
-}
-
-/**
- * Converte dias de atraso para extenso
- */
-function daysToWords(days) {
-  const units = ["zero", "um", "dois", "três", "quatro", "cinco", "seis", "sete", "oito", "nove"];
-  const teens = ["dez", "onze", "doze", "treze", "quatorze", "quinze", "dezesseis", "dezessete", "dezoito", "dezenove"];
-  const tens = ["", "dez", "vinte", "trinta", "quarenta", "cinquenta", "sessenta", "setenta", "oitenta", "noventa"];
-  const hundreds = ["", "cento", "duzentos", "trezentos", "quatrocentos", "quinhentos", "seiscentos", "setecentos", "oitocentos", "novecentos"];
-
-  function convertGroup(n) {
-    if (n === 100) return "cem";
-    let words = [];
-    const h = Math.floor(n / 100);
-    const t = Math.floor((n % 100) / 10);
-    const u = n % 10;
-
-    if (h > 0) words.push(hundreds[h]);
-    if (t === 1) {
-      words.push(teens[u]);
-    } else {
-      if (t > 0) words.push(tens[t]);
-      if (u > 0) words.push(units[u]);
-    }
-    return words.filter(Boolean).join(" e ");
-  }
-
-  if (days <= 9) return units[days];
-  return convertGroup(days);
-}
 
 /**
  * Normaliza o telefone para formato E.164 (+55...)
@@ -114,13 +20,13 @@ function formatE164(phone) {
 /**
  * Dispara uma chamada telefônica de voz com IA pelo Dialog DDM Gateway
  *
- * @param {object} lead - O lead contendo telefone, nome, valor e vencimento
+ * @param {object} lead - O lead contendo telefone, nome e dados complementares
  * @returns {Promise<{success: boolean, log: string, callId?: string}>}
  */
 async function makeDialDdmCall(lead) {
   const baseUrl = (process.env.DIALDDM_BASE_URL || process.env.VAPI_BASE_URL || 'https://dialddm.grupoddm.ia.br/v1').replace(/\/+$/, '');
   const apiKey = process.env.DIALDDM_API_KEY || process.env.VAPI_API_KEY || 'dialddm_live_key';
-  const defaultAssistantId = process.env.DIALDDM_DEFAULT_ASSISTANT_ID || process.env.DEFAULT_ASSISTANT_ID || '6';
+  const defaultAssistantId = process.env.DIALDDM_DEFAULT_ASSISTANT_ID || process.env.DEFAULT_ASSISTANT_ID || '5';
   const defaultPhoneNumberId = process.env.DIALDDM_PHONE_NUMBER_ID || 'oktor_sip_500ch';
   const maxConcurrency = parseInt(process.env.DIALDDM_MAX_CONCURRENCY || '50', 10);
 
@@ -145,21 +51,6 @@ async function makeDialDdmCall(lead) {
   }
 
   const phoneE164 = formatE164(targetPhone);
-  const valorFaturaText = numberToWordsBRL(lead.debt_value || 0);
-  const diasAtrasoText = daysToWords(lead.dias_atraso || 0) + ' dias';
-  const statusInternetText = lead.status_internet || '';
-
-  // Calcular número de faturas do lead
-  let numeroFaturas = 1;
-  try {
-    const countResult = get('SELECT COUNT(id) as count FROM leads WHERE campaign_id = ? AND phone = ?', [lead.campaign_id, lead.phone]);
-    if (countResult && countResult.count > 0) {
-      numeroFaturas = countResult.count;
-    }
-  } catch (e) {}
-
-  const faturasWords = ["zero", "uma", "duas", "três", "quatro", "cinco", "seis", "sete", "oito", "nove", "dez"];
-  const faturasText = numeroFaturas <= 10 ? faturasWords[numeroFaturas] : String(numeroFaturas);
 
   // Extrair nome amigável
   const rawName = (lead.name || '')
@@ -183,6 +74,21 @@ async function makeDialDdmCall(lead) {
   const appBaseUrl = process.env.APP_BASE_URL || 'https://verolembrete.grupoddm.ia.br';
   const webhookUrl = `${appBaseUrl}/api/vapi-webhook`;
 
+  // Variáveis dinâmicas para o prompt da IA do Dialog DDM
+  const variableValues = {
+    nome: shortName,
+    nome_cliente: shortName,
+    nome_completo: lead.name || shortName,
+    telefone: lead.phone || '',
+    cpf: lead.cpf || '',
+    email: lead.email || ''
+  };
+
+  // Se o lead tiver campos extras
+  if (lead.debt_value) variableValues.valor = String(lead.debt_value);
+  if (lead.due_date) variableValues.vencimento = String(lead.due_date);
+  if (lead.barcode) variableValues.codigo_barras = String(lead.barcode);
+
   const payload = {
     assistantId: String(finalAssistantId),
     phoneNumberId: String(finalPhoneNumberId),
@@ -197,16 +103,7 @@ async function makeDialDdmCall(lead) {
     serverUrl: webhookUrl,
     maxConcurrency: maxConcurrency,
     assistantOverrides: {
-      firstMessage: `Olá, eu falo com ${shortName}, correto?`,
-      variableValues: {
-        NOME_DEV: shortName,
-        nome_cliente: shortName,
-        VAL_NOMINAL: valorFaturaText,
-        valor_fatura: valorFaturaText,
-        dias_atraso: diasAtrasoText,
-        status_internet: statusInternetText,
-        numero_faturas: faturasText
-      }
+      variableValues: variableValues
     }
   };
 
