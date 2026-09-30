@@ -26,7 +26,7 @@ function formatE164(phone) {
 async function makeDialDdmCall(lead) {
   const baseUrl = (process.env.DIALDDM_BASE_URL || process.env.VAPI_BASE_URL || 'https://dialddm.grupoddm.ia.br/v1').replace(/\/+$/, '');
   const apiKey = process.env.DIALDDM_API_KEY || process.env.VAPI_API_KEY || 'dialddm_live_key';
-  const defaultAssistantId = process.env.DIALDDM_DEFAULT_ASSISTANT_ID || process.env.DEFAULT_ASSISTANT_ID || '5';
+  const defaultAssistantId = process.env.DIALDDM_DEFAULT_ASSISTANT_ID || process.env.DEFAULT_ASSISTANT_ID || '11';
   const defaultPhoneNumberId = process.env.DIALDDM_PHONE_NUMBER_ID || 'oktor_sip_500ch';
   const maxConcurrency = parseInt(process.env.DIALDDM_MAX_CONCURRENCY || '50', 10);
 

@@ -46,7 +46,7 @@ app.get('/api/system-info', (req, res) => {
     dirname: __dirname,
     nodeVersion: process.version,
     uptimeSeconds: process.uptime(),
-    dialddmAssistantId: process.env.DIALDDM_DEFAULT_ASSISTANT_ID || '5',
+    dialddmAssistantId: process.env.DIALDDM_DEFAULT_ASSISTANT_ID || '11',
     vapiAssistantId: process.env.VAPI_ASSISTANT_ID,
     vapiPhoneNumberId: process.env.VAPI_PHONE_NUMBER_ID,
     retellAgentId: process.env.RETELL_AGENT_ID,

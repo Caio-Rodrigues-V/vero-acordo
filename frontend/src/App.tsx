@@ -190,8 +190,8 @@ export default function App() {
 
   // Upload state
   const [campaignName, setCampaignName] = useState('');
-  const [assistantId, setAssistantId] = useState('5');
-  const [phoneNumberId, setPhoneNumberId] = useState('oktor_sip_500ch');
+  const [assistantId] = useState('11');
+  const [phoneNumberId] = useState('oktor_sip_500ch');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -868,13 +868,12 @@ export default function App() {
                     </label>
                     <input 
                       type="text" 
-                      placeholder="Ex: 5"
-                      value={assistantId}
-                      onChange={(e) => setAssistantId(e.target.value)}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#890038]"
+                      value="11"
+                      disabled
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-semibold text-slate-700 cursor-not-allowed select-none"
                     />
                     <span className="text-[10px] text-slate-400 mt-1 block">
-                      Informe o ID do agente que você criou no painel do Dialog.
+                      Agente #11 oficial fixado para a operação Vero Acordo.
                     </span>
                   </div>
 
@@ -884,11 +883,13 @@ export default function App() {
                     </label>
                     <input 
                       type="text" 
-                      placeholder="Ex: oktor_sip_500ch"
-                      value={phoneNumberId}
-                      onChange={(e) => setPhoneNumberId(e.target.value)}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-[#890038]"
+                      value="oktor_sip_500ch"
+                      disabled
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-semibold text-slate-700 cursor-not-allowed select-none"
                     />
+                    <span className="text-[10px] text-slate-400 mt-1 block">
+                      Tronco fixo de alta capacidade (500 canais Oktor).
+                    </span>
                   </div>
 
                   <div>
