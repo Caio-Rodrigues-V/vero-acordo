@@ -19,10 +19,11 @@ try {
       }
     };
   } catch (err2) {
-    console.error(`\n[ERRO NODE.JS] O módulo 'node:sqlite' é nativo do Node v22+ (Seu servidor está na versão ${process.version}).`);
-    console.error(`Para rodar no Node v20, utilize a flag --experimental-sqlite:\n`);
-    console.error(`   node --experimental-sqlite backend/scripts/manualSmsTrigger.js\n`);
-    throw e;
+    const fs = require('fs');
+    const msg = `[DB CRASH] Node.js version: ${process.version}. Falha ao carregar SQLite nativo (node:sqlite) e better-sqlite3. Certifique-se de executar 'Run NPM Install' no cPanel ou selecionar Node.js v22+. Erro: ${err2.message}\n`;
+    try { fs.appendFileSync(path.join(__dirname, '../passenger_crash.log'), msg); } catch (e) {}
+    console.error(msg);
+    throw err2;
   }
 }
 

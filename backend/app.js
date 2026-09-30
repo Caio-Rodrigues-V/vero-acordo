@@ -12,6 +12,8 @@ const { updateCampaignStats } = require('./services/stats.js');
 const xlsx = require('xlsx');
 const { classifyCallOccurrence, extractCustomerSpeech, normalizeText, validCpcOccurrences, cleanTranscript } = require('./utils/classifier.js');
 
+dotenv.config({ path: path.join(__dirname, '.env') });
+dotenv.config({ path: path.join(__dirname, '../.env') });
 dotenv.config();
 
 // Garantir que a pasta de uploads existe
@@ -21,7 +23,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 // Configuração do Multer para Uploads temporários
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ dest: uploadDir });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
