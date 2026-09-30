@@ -59,6 +59,7 @@ async function makeDialDdmCall(lead) {
     .trim() || lead.name || 'Cliente';
 
   const words = rawName.split(/\s+/).filter(Boolean);
+  const firstName = words[0] ? (words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase()) : 'Cliente';
   const preps = ['de', 'da', 'do', 'dos', 'das'];
   let wordCount = 2;
   if (words.length > 2 && preps.includes(words[1].toLowerCase())) {
@@ -78,6 +79,8 @@ async function makeDialDdmCall(lead) {
   const variableValues = {
     nome: shortName,
     nome_cliente: shortName,
+    primeiro_nome: firstName,
+    first_name: firstName,
     nome_completo: lead.name || shortName,
     telefone: lead.phone || '',
     cpf: lead.cpf || '',
