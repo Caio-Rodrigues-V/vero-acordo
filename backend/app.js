@@ -1192,7 +1192,7 @@ app.post('/api/campaigns/upload', upload.single('file'), async (req, res) => {
         : (requestedProvider === 'vapi' ? 'vapi' : (process.env.DIALER_PROVIDER || 'dialddm').toLowerCase()));
 
     const defaultConcurr = provider === 'dialddm'
-      ? parseInt(process.env.DIALDDM_MAX_CONCURRENCY || process.env.MAX_CONCURRENT_CALLS || '500', 10)
+      ? parseInt(process.env.DIALDDM_MAX_CONCURRENCY || process.env.MAX_CONCURRENT_CALLS || '20', 10)
       : parseInt(process.env.MAX_CONCURRENT_CALLS || '14', 10);
 
     const activeCampaign = get(

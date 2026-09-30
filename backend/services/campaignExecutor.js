@@ -15,11 +15,11 @@ async function processCampaign(campaignId, force = false) {
   }
   activeJobs.add(campaignId);
 
-  const paceDelayMs = parseInt(process.env.WORKER_DELAY_BETWEEN_CALLS_MS || process.env.CALL_PACE_DELAY_MS || '1500', 10);
-  const safePaceDelay = isNaN(paceDelayMs) || paceDelayMs < 100 ? 1500 : paceDelayMs;
+  const paceDelayMs = parseInt(process.env.WORKER_DELAY_BETWEEN_CALLS_MS || process.env.CALL_PACE_DELAY_MS || '1000', 10);
+  const safePaceDelay = isNaN(paceDelayMs) || paceDelayMs < 100 ? 1000 : paceDelayMs;
   
-  const envMaxConcurrency = parseInt(process.env.MAX_CONCURRENT_CALLS || process.env.DIALDDM_MAX_CONCURRENCY || '50', 10);
-  const defaultConcurrency = isNaN(envMaxConcurrency) || envMaxConcurrency <= 0 ? 50 : envMaxConcurrency;
+  const envMaxConcurrency = parseInt(process.env.MAX_CONCURRENT_CALLS || process.env.DIALDDM_MAX_CONCURRENCY || '20', 10);
+  const defaultConcurrency = isNaN(envMaxConcurrency) || envMaxConcurrency <= 0 ? 20 : envMaxConcurrency;
 
   const batchSizeValue = parseInt(process.env.WORKER_CALL_BATCH_SIZE || process.env.BATCH_SIZE || String(defaultConcurrency), 10);
   const safeBatchSize = isNaN(batchSizeValue) || batchSizeValue <= 0 ? defaultConcurrency : batchSizeValue;
@@ -96,7 +96,10 @@ async function processCampaign(campaignId, force = false) {
         break;
       }
 
-      await Promise.all(leads.map(async (lead) => {
+      // Disparar chamadas com cadência controlada (stagger de 120ms = ~8 req/s para respeitar limite da API de até 10/s)
+      for (const lead of leads) {
+        if (!activeJobs.has(campaignId)) break;
+
         // Marcar o lead como 'calling' no banco temporariamente
         run(
           `UPDATE leads 
@@ -106,66 +109,71 @@ async function processCampaign(campaignId, force = false) {
         );
 
         // 5. Disparar a chamada para DIAL DDM, RETELL AI ou VAPI (Lazy-load para proteger instâncias)
-        try {
-          let callResult;
-          if (provider === 'retell') {
-            const { makeRetellCall } = require('./retell.js');
-            callResult = await makeRetellCall(lead);
-          } else if (provider === 'dialddm') {
-            const { makeDialDdmCall } = require('./dialddm.js');
-            callResult = await makeDialDdmCall(lead);
-          } else {
-            callResult = await makeVapiCall(lead);
-          }
-
-          if (!callResult.success) {
-            const isConcurrencyError = callResult.log && (
-              callResult.log.toLowerCase().includes('concurrency') ||
-              callResult.log.toLowerCase().includes('rate limit') ||
-              callResult.log.toLowerCase().includes('too many') ||
-              callResult.log.toLowerCase().includes('quota') ||
-              callResult.log.includes('429')
-            );
-
-            if (isConcurrencyError) {
-              console.log(`[EXECUTOR CONCORRÊNCIA] Limite de concorrência/rate limit (${provider.toUpperCase()}) atingido. Devolvendo lead #${lead.id} para a fila...`);
-              run(
-                `UPDATE leads SET call_status = 'pending', call_log = 'Aguardando liberação de vaga no canal...', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-                [lead.id]
-              );
-              return;
+        (async () => {
+          try {
+            let callResult;
+            if (provider === 'retell') {
+              const { makeRetellCall } = require('./retell.js');
+              callResult = await makeRetellCall(lead);
+            } else if (provider === 'dialddm') {
+              const { makeDialDdmCall } = require('./dialddm.js');
+              callResult = await makeDialDdmCall(lead);
+            } else {
+              callResult = await makeVapiCall(lead);
             }
 
-            // Falha permanente no número/discagem
+            if (!callResult.success) {
+              const isConcurrencyError = callResult.log && (
+                callResult.log.toLowerCase().includes('concurrency') ||
+                callResult.log.toLowerCase().includes('rate limit') ||
+                callResult.log.toLowerCase().includes('too many') ||
+                callResult.log.toLowerCase().includes('quota') ||
+                callResult.log.includes('429')
+              );
+
+              if (isConcurrencyError) {
+                console.log(`[EXECUTOR CONCORRÊNCIA] Limite de concorrência/rate limit (${provider.toUpperCase()}) atingido. Devolvendo lead #${lead.id} para a fila...`);
+                run(
+                  `UPDATE leads SET call_status = 'pending', call_log = 'Aguardando liberação de vaga no canal...', updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+                  [lead.id]
+                );
+                return;
+              }
+
+              // Falha permanente no número/discagem
+              run(
+                `UPDATE leads 
+                 SET call_status = 'failed', call_log = ?, sms_status = 'failed', sms_log = 'Cancelado: Falha na chamada.', email_status = 'failed', email_log = 'Cancelado: Falha na chamada.', call_attempts = call_attempts + 1, updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = ?`,
+                [callResult.log, lead.id]
+              );
+              run(
+                `UPDATE campaigns 
+                 SET processed_leads = processed_leads + 1, failed_calls = failed_calls + 1, failed_sms = failed_sms + 1 
+                 WHERE id = ?`,
+                [campaignId]
+              );
+            } else {
+              // Chamada iniciada com sucesso, aguardando webhook de finalização
+              run(
+                `UPDATE leads 
+                 SET call_log = ?, call_attempts = call_attempts + 1, updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = ?`,
+                [callResult.log, lead.id]
+              );
+            }
+          } catch (err) {
+            console.error(`[EXECUTOR ERROR] Falha no disparo do lead #${lead.id}:`, err.message);
             run(
-              `UPDATE leads 
-               SET call_status = 'failed', call_log = ?, sms_status = 'failed', sms_log = 'Cancelado: Falha na chamada.', email_status = 'failed', email_log = 'Cancelado: Falha na chamada.', call_attempts = call_attempts + 1, updated_at = CURRENT_TIMESTAMP 
-               WHERE id = ?`,
-              [callResult.log, lead.id]
-            );
-            run(
-              `UPDATE campaigns 
-               SET processed_leads = processed_leads + 1, failed_calls = failed_calls + 1, failed_sms = failed_sms + 1 
-               WHERE id = ?`,
-              [campaignId]
-            );
-          } else {
-            // Chamada iniciada na VAPI com sucesso, aguardando webhook de finalização
-            run(
-              `UPDATE leads 
-               SET call_log = ?, call_attempts = call_attempts + 1, updated_at = CURRENT_TIMESTAMP 
-               WHERE id = ?`,
-              [callResult.log, lead.id]
+              `UPDATE leads SET call_status = 'failed', sms_status = 'failed', sms_log = 'Cancelado: Erro de execução.', email_status = 'failed', email_log = 'Cancelado: Erro de execução.', call_log = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [`Erro de execução: ${err.message}`, lead.id]
             );
           }
-        } catch (err) {
-          console.error(`[EXECUTOR ERROR] Falha no disparo do lead #${lead.id}:`, err.message);
-          run(
-            `UPDATE leads SET call_status = 'failed', sms_status = 'failed', sms_log = 'Cancelado: Erro de execução.', email_status = 'failed', email_log = 'Cancelado: Erro de execução.', call_log = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            [`Erro de execução: ${err.message}`, lead.id]
-          );
-        }
-      }));
+        })();
+
+        // Intervalo de segurança entre cada requisição à API (120ms = máx 8.3 requisições por segundo)
+        await new Promise((r) => setTimeout(r, 120));
+      }
 
       // 6. Intervalo entre lotes para manter fluxo constante e estável
       await new Promise((resolve) => setTimeout(resolve, safePaceDelay));
