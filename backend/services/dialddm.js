@@ -58,37 +58,95 @@ async function makeDialDdmCall(lead) {
     .replace(/TESTE PROD/gi, '')
     .trim() || lead.name || 'Cliente';
 
+  // 1. Extração inicial do nome da planilha
   const words = rawName.split(/\s+/).filter(Boolean);
-  const firstName = words[0] ? (words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase()) : 'Cliente';
+  let firstName = words[0] ? (words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase()) : 'Cliente';
   const preps = ['de', 'da', 'do', 'dos', 'das'];
   let wordCount = 2;
   if (words.length > 2 && preps.includes(words[1].toLowerCase())) {
     wordCount = 3;
   }
   const selectedWords = words.slice(0, Math.min(wordCount, words.length));
-  const shortName = selectedWords.map((w, idx) => {
+  let shortName = selectedWords.map((w, idx) => {
     const lower = w.toLowerCase();
     if (idx > 0 && preps.includes(lower)) return lower;
     return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
   }).join(' ') || 'Cliente';
+  let fullName = lead.name || shortName;
+  let debtValue = lead.debt_value ? String(lead.debt_value) : '';
+  let discountValue = '';
+  let hasDiscount = false;
+
+  // 2. Pré-consulta na API da Vero com o CPF antes de discar para garantir dados 100% atualizados
+  if (lead.cpf) {
+    try {
+      const veroAcordo = require('./veroAcordo.js');
+      console.log(`[DIAL DDM PRE-CHECK] Consultando API Vero para o CPF ${lead.cpf} (Lead #${lead.id})...`);
+      const checkData = await veroAcordo.checkCliente(lead.cpf);
+
+      if (checkData && checkData.cliente) {
+        if (checkData.cliente.primeiro_nome) {
+          const apiFirst = String(checkData.cliente.primeiro_nome).trim();
+          firstName = apiFirst.charAt(0).toUpperCase() + apiFirst.slice(1).toLowerCase();
+        }
+        if (checkData.cliente.nome) {
+          fullName = String(checkData.cliente.nome).trim();
+          shortName = firstName;
+        }
+        if (Array.isArray(checkData.cliente.contratos) && checkData.cliente.contratos.length > 0) {
+          const mainContract = checkData.cliente.contratos[0];
+          if (mainContract.valor_total) {
+            debtValue = String(mainContract.valor_total).replace(/\s/g, '');
+          }
+        }
+
+        // Atualizar o banco de dados com os dados oficiais retornados pela API
+        try {
+          const numValue = parseFloat(debtValue.replace(/\./g, '').replace(',', '.')) || null;
+          run(
+            `UPDATE leads SET debt_value = COALESCE(?, debt_value), name = COALESCE(?, name), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [numValue, fullName, lead.id]
+          );
+        } catch (dbErr) {}
+
+        console.log(`[DIAL DDM PRE-CHECK SUCESSO] Lead #${lead.id} atualizado: Nome="${firstName}", Débito=R$ ${debtValue}`);
+      }
+
+      // Tenta simulação com desconto prévia
+      try {
+        const simData = await veroAcordo.simularAVista(lead.cpf);
+        if (simData && !simData.error && (simData.valor_com_desconto || simData.valor_desconto)) {
+          discountValue = String(simData.valor_com_desconto || simData.valor_desconto).replace(/\s/g, '');
+          hasDiscount = true;
+          console.log(`[DIAL DDM PRE-CHECK SUCESSO] Desconto disponível para Lead #${lead.id}: R$ ${discountValue}`);
+        }
+      } catch (simErr) {}
+
+    } catch (apiErr) {
+      console.warn(`[DIAL DDM PRE-CHECK WARN] Falha na pré-consulta do CPF ${lead.cpf}: ${apiErr.message}`);
+    }
+  }
 
   const appBaseUrl = process.env.APP_BASE_URL || 'https://veroacordo.grupoddm.ia.br';
   const webhookUrl = `${appBaseUrl}/api/vapi-webhook`;
 
-  // Variáveis dinâmicas para o prompt da IA do Dialog DDM
+  // Variáveis dinâmicas para o prompt da IA do Dialog DDM (já com débito e nome oficiais da API da Vero)
   const variableValues = {
     nome: shortName,
     nome_cliente: shortName,
     primeiro_nome: firstName,
     first_name: firstName,
-    nome_completo: lead.name || shortName,
+    nome_completo: fullName,
     telefone: lead.phone || '',
     cpf: lead.cpf || '',
-    email: lead.email || ''
+    email: lead.email || '',
+    valor: debtValue || '0,00',
+    valor_atualizado: debtValue || '0,00',
+    valor_original: debtValue || '0,00',
+    valor_com_desconto: discountValue || debtValue || '0,00',
+    tem_desconto: hasDiscount ? 'sim' : 'nao'
   };
 
-  // Se o lead tiver campos extras
-  if (lead.debt_value) variableValues.valor = String(lead.debt_value);
   if (lead.due_date) variableValues.vencimento = String(lead.due_date);
   if (lead.barcode) variableValues.codigo_barras = String(lead.barcode);
 
