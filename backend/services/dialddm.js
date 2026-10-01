@@ -119,6 +119,7 @@ async function makeDialDdmCall(lead) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
+        'X-API-Key': apiKey,
         'X-Max-Concurrency': String(maxConcurrency)
       },
       body: JSON.stringify(payload)
@@ -173,7 +174,10 @@ async function getDialDdmConcurrency() {
 
   try {
     const res = await fetch(`${baseUrl}/concurrency`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` }
+      headers: { 
+        'Authorization': `Bearer ${apiKey}`,
+        'X-API-Key': apiKey
+      }
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -200,7 +204,10 @@ async function getDialDdmTranscript(callId) {
 
   try {
     const res = await fetch(`${baseUrl}/call/${callId}/transcript`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` }
+      headers: { 
+        'Authorization': `Bearer ${apiKey}`,
+        'X-API-Key': apiKey
+      }
     });
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -221,11 +228,17 @@ async function getDialDdmAssistants() {
 
   try {
     const res = await fetch(`${baseUrl}/assistants`, {
-      headers: { 'Authorization': `Bearer ${apiKey}` }
+      headers: { 
+        'Authorization': `Bearer ${apiKey}`,
+        'X-API-Key': apiKey
+      }
     });
     if (!res.ok) {
       const fallbackRes = await fetch(`${baseUrl}/assistant`, {
-        headers: { 'Authorization': `Bearer ${apiKey}` }
+        headers: { 
+          'Authorization': `Bearer ${apiKey}`,
+          'X-API-Key': apiKey
+        }
       });
       if (!fallbackRes.ok) throw new Error(`HTTP ${res.status}`);
       return await fallbackRes.json();
