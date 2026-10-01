@@ -72,7 +72,7 @@ async function makeDialDdmCall(lead) {
     return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
   }).join(' ') || 'Cliente';
 
-  const appBaseUrl = process.env.APP_BASE_URL || 'https://verolembrete.grupoddm.ia.br';
+  const appBaseUrl = process.env.APP_BASE_URL || 'https://veroacordo.grupoddm.ia.br';
   const webhookUrl = `${appBaseUrl}/api/vapi-webhook`;
 
   // Variáveis dinâmicas para o prompt da IA do Dialog DDM
