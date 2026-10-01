@@ -1568,59 +1568,40 @@ app.post('/api/vapi-webhook', async (req, res) => {
         const parsedArgs = typeof args === 'string' ? (() => { try { return JSON.parse(args); } catch(e) { return {}; } })() : args;
         const targetCpf = parsedArgs.cpf || parsedArgs.documento || leadCpf;
 
+        const toolStartTime = Date.now();
         console.log(`[AI TOOL CALL] Executando ${funcName} com argumentos:`, parsedArgs);
 
         try {
+          let data;
           if (normFunc.includes('check') || normFunc.includes('consultarcliente') || normFunc.includes('dadoscliente') || normFunc.includes('contratos')) {
-            const data = await veroAcordo.checkCliente(targetCpf);
-            return {
-              toolCallId: tc.id,
-              result: JSON.stringify(data)
-            };
+            data = await veroAcordo.checkCliente(targetCpf);
           } else if (normFunc.includes('simulacaovista') || normFunc.includes('simularavista') || (normFunc.includes('simulacao') && !normFunc.includes('parcela'))) {
-            const data = await veroAcordo.simularAVista(targetCpf);
-            return {
-              toolCallId: tc.id,
-              result: JSON.stringify(data)
-            };
+            data = await veroAcordo.simularAVista(targetCpf);
           } else if (normFunc.includes('simulacoes') || normFunc.includes('simularparcelas') || normFunc.includes('parcelamento')) {
-            const data = await veroAcordo.simularParcelas(targetCpf);
-            return {
-              toolCallId: tc.id,
-              result: JSON.stringify(data)
-            };
+            data = await veroAcordo.simularParcelas(targetCpf);
           } else if (normFunc.includes('fecharavista') || normFunc.includes('conclusaovista') || (normFunc.includes('conclusao') && !normFunc.includes('parcela'))) {
-            const data = await veroAcordo.fecharAcordoAVista(targetCpf);
-            return {
-              toolCallId: tc.id,
-              result: JSON.stringify(data)
-            };
+            data = await veroAcordo.fecharAcordoAVista(targetCpf);
           } else if (normFunc.includes('fecharparcelado') || normFunc.includes('conclusaoparcela') || normFunc.includes('parcelar')) {
             const parcelas = parsedArgs.parcelas || parsedArgs.qtd_parcelas || 1;
-            const data = await veroAcordo.fecharAcordoParcelado(targetCpf, parcelas);
-            return {
-              toolCallId: tc.id,
-              result: JSON.stringify(data)
-            };
+            data = await veroAcordo.fecharAcordoParcelado(targetCpf, parcelas);
           } else if (normFunc.includes('consultaracordo') || normFunc.includes('acordo')) {
-            const data = await veroAcordo.consultarAcordo(targetCpf);
-            return {
-              toolCallId: tc.id,
-              result: JSON.stringify(data)
-            };
+            data = await veroAcordo.consultarAcordo(targetCpf);
           } else if (normFunc.includes('voicemail')) {
             return {
               toolCallId: tc.id,
               result: 'Caixa postal detectada.'
             };
+          } else {
+            data = { status: 'success', message: 'Função executada.' };
           }
 
+          console.log(`[AI TOOL CALL] ${funcName} concluído com sucesso em ${Date.now() - toolStartTime}ms`);
           return {
             toolCallId: tc.id,
-            result: JSON.stringify({ status: 'success', message: 'Função executada.' })
+            result: JSON.stringify(data)
           };
         } catch (err) {
-          console.error(`[AI TOOL CALL ERROR] Falha ao executar ${funcName}:`, err.message);
+          console.error(`[AI TOOL CALL ERROR] Falha ao executar ${funcName} após ${Date.now() - toolStartTime}ms:`, err.message);
           return {
             toolCallId: tc.id,
             result: JSON.stringify({ error: err.message })
