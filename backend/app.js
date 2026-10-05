@@ -1018,6 +1018,17 @@ app.post('/api/campaigns/:id/redial', (req, res) => {
 });
 
 /**
+ * Rota para retornar as configurações padrão do discador (Assistant ID, Trunk, etc)
+ */
+app.get('/api/config', (req, res) => {
+  res.json({
+    assistantId: String(process.env.DIALDDM_DEFAULT_ASSISTANT_ID || process.env.DEFAULT_ASSISTANT_ID || '12'),
+    phoneNumberId: String(process.env.DIALDDM_PHONE_NUMBER_ID || 'oktor_sip_500ch'),
+    dialerProvider: String(process.env.DIALER_PROVIDER || 'dialddm')
+  });
+});
+
+/**
  * Rota para buscar os assistentes cadastrados no Dialog DDM Gateway
  */
 app.get('/api/dialddm/assistants', async (req, res) => {

@@ -192,8 +192,8 @@ export default function App() {
 
   // Upload state
   const [campaignName, setCampaignName] = useState('');
-  const [assistantId] = useState('11');
-  const [phoneNumberId] = useState('oktor_sip_500ch');
+  const [assistantId, setAssistantId] = useState('12');
+  const [phoneNumberId, setPhoneNumberId] = useState('oktor_sip_500ch');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -305,8 +305,22 @@ export default function App() {
     }
   };
 
+  const fetchConfig = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/config`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.assistantId) setAssistantId(String(data.assistantId));
+        if (data.phoneNumberId) setPhoneNumberId(String(data.phoneNumberId));
+      }
+    } catch (err) {
+      console.error('Error fetching config:', err);
+    }
+  };
+
   // Inicialização
   useEffect(() => {
+    fetchConfig();
     fetchStats(selectedCampaignId, selectedDate);
     fetchCampaigns();
     fetchOccurrences(selectedCampaignId, selectedDate);
@@ -931,12 +945,12 @@ export default function App() {
                     </label>
                     <input 
                       type="text" 
-                      value="11"
+                      value={assistantId}
                       disabled
                       className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-semibold text-slate-700 cursor-not-allowed select-none"
                     />
                     <span className="text-[10px] text-slate-400 mt-1 block">
-                      Agente #11 oficial fixado para a operação Vero Acordo.
+                      Agente #{assistantId} oficial configurado no servidor (.env).
                     </span>
                   </div>
 
@@ -946,12 +960,12 @@ export default function App() {
                     </label>
                     <input 
                       type="text" 
-                      value="oktor_sip_500ch"
+                      value={phoneNumberId}
                       disabled
                       className="w-full px-4 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-semibold text-slate-700 cursor-not-allowed select-none"
                     />
                     <span className="text-[10px] text-slate-400 mt-1 block">
-                      Tronco fixo de alta capacidade (500 canais Oktor).
+                      Tronco fixo de alta capacidade ({phoneNumberId}).
                     </span>
                   </div>
 
