@@ -265,7 +265,7 @@ async function sendLocawebEmail(lead) {
  * @returns {Promise<{success: boolean, log: string}>}
  */
 async function triggerSmartRcs(lead) {
-  const apiKey = process.env.SMART_RCS_API_KEY || '8DD74B20-D556-494E-A6C1-216FCA7796EC';
+  const apiKey = process.env.SMART_RCS_API_KEY || '3EE7BE3E-FE44-4EFA-B0DA-6D85D096BB63';
   const apiUrl = process.env.SMART_RCS_API_URL || 'https://developer.smartrcs.com.br/api/Message/text';
   const senderAgent = process.env.SMART_RCS_SENDER || 'rcs_grupoddm';
 
@@ -295,7 +295,7 @@ async function triggerSmartRcs(lead) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
   try {
-    console.log(`[SMS] Enviando mensagem via agente '${senderAgent}' para ${cleanedPhone}...`);
+    console.log(`[SMS/RCS] Enviando mensagem via agente '${senderAgent}' para ${cleanedPhone}...`);
 
     const response = await fetch(apiUrl, {
       method: 'POST',
@@ -308,7 +308,7 @@ async function triggerSmartRcs(lead) {
         destinations: [
           {
             to: cleanedPhone,
-            messageid: `lead_${lead.id}_${Date.now()}`
+            messageid: `lead_${lead.id || Date.now()}_${Date.now()}`
           }
         ],
         text: messageText,
@@ -330,16 +330,16 @@ async function triggerSmartRcs(lead) {
 
     const txId = data.transactionId || 'OK';
 
-    console.log(`[SMS] Mensagem enviada com sucesso para ${cleanedPhone}. Transaction ID: ${txId}`);
+    console.log(`[SMS/RCS] Mensagem enviada com sucesso para ${cleanedPhone}. Transaction ID: ${txId}`);
     return {
       success: true,
-      log: `[SMS] Enviado com sucesso. Transaction ID: ${txId}`
+      log: `[Smart RCS] Enviado com sucesso. Transaction ID: ${txId}`
     };
   } catch (error) {
-    console.error(`[SMS ERROR] Falha ao enviar para lead #${lead.id}:`, error.message);
+    console.error(`[SMS/RCS ERROR] Falha ao enviar para lead #${lead.id}:`, error.message);
     return {
       success: false,
-      log: `[SMS] Falha no envio: ${error.message}`
+      log: `[Smart RCS] Falha no envio: ${error.message}`
     };
   }
 }
@@ -539,14 +539,26 @@ async function triggerDdmShortSms(lead) {
 }
 
 /**
- * Roteador de mensagens SMS: usa a API DDM enviaShort.php como canal principal.
+ * Roteador de mensagens SMS/RCS: Prioriza Smart RCS (com fallback SMS automático de operadora).
+ * Se a API Smart RCS falhar ou estiver inacessível, recorre à API DDM enviaShort.
  */
 async function dispatchSmsOrRcs(lead) {
+  try {
+    const rcsRes = await triggerSmartRcs(lead);
+    if (rcsRes && rcsRes.success) {
+      return rcsRes;
+    }
+    console.warn(`[DISPATCH FALLBACK] Smart RCS não confirmou envio para lead #${lead.id} (${rcsRes?.log}). Tentando via DDM Short SMS...`);
+  } catch (err) {
+    console.warn(`[DISPATCH FALLBACK] Falha ao disparar Smart RCS: ${err.message}. Tentando via DDM Short SMS...`);
+  }
+
   return await enqueueDdmSms(lead);
 }
 
 module.exports = { 
   triggerN8NSmsWebhook: dispatchSmsOrRcs,
+  dispatchSmsOrRcs,
   triggerDdmShortSms,
   triggerUnipixSms,
   triggerSmartRcs,
