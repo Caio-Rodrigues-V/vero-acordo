@@ -84,32 +84,49 @@ async function makeDialDdmCall(lead) {
       console.log(`[DIAL DDM PRE-CHECK] Consultando API Vero para o CPF ${lead.cpf} (Lead #${lead.id})...`);
       const checkData = await veroAcordo.checkCliente(lead.cpf);
 
-      if (checkData && checkData.cliente) {
-        if (checkData.cliente.primeiro_nome) {
-          const apiFirst = String(checkData.cliente.primeiro_nome).trim();
-          firstName = apiFirst.charAt(0).toUpperCase() + apiFirst.slice(1).toLowerCase();
-        }
-        if (checkData.cliente.nome) {
-          fullName = String(checkData.cliente.nome).trim();
-          shortName = firstName;
-        }
-        if (Array.isArray(checkData.cliente.contratos) && checkData.cliente.contratos.length > 0) {
-          const mainContract = checkData.cliente.contratos[0];
-          if (mainContract.valor_total) {
-            debtValue = String(mainContract.valor_total).replace(/\s/g, '');
+      if (checkData) {
+        const clienteObj = checkData.cliente || checkData.dados || checkData;
+
+        if (clienteObj) {
+          if (clienteObj.primeiro_nome || clienteObj.nome) {
+            const apiFirst = String(clienteObj.primeiro_nome || clienteObj.nome.split(' ')[0]).trim();
+            firstName = apiFirst.charAt(0).toUpperCase() + apiFirst.slice(1).toLowerCase();
           }
+          if (clienteObj.nome) {
+            fullName = String(clienteObj.nome).trim();
+            shortName = firstName;
+          }
+
+          // Procurar valor do contrato em múltiplos formatos possíveis
+          let foundValue = null;
+
+          if (Array.isArray(clienteObj.contratos) && clienteObj.contratos.length > 0) {
+            const c0 = clienteObj.contratos[0];
+            foundValue = c0.valor_total || c0.valor || c0.total || c0.saldo || c0.debito || c0.valor_aberto;
+          } else if (Array.isArray(clienteObj.faturas) && clienteObj.faturas.length > 0) {
+            const f0 = clienteObj.faturas[0];
+            foundValue = f0.valor || f0.valor_total || f0.saldo;
+          }
+
+          if (!foundValue) {
+            foundValue = clienteObj.valor_total || clienteObj.valor || clienteObj.saldo_devedor || clienteObj.debito_total || clienteObj.total;
+          }
+
+          if (foundValue !== null && foundValue !== undefined) {
+            debtValue = String(foundValue).replace(/\s/g, '');
+          }
+
+          // Atualizar o banco de dados com os dados oficiais retornados pela API
+          try {
+            const numValue = parseFloat(String(debtValue).replace(/\./g, '').replace(',', '.')) || null;
+            run(
+              `UPDATE leads SET debt_value = COALESCE(?, debt_value), name = COALESCE(?, name), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [numValue, fullName, lead.id]
+            );
+          } catch (dbErr) {}
+
+          console.log(`[DIAL DDM PRE-CHECK SUCESSO] Lead #${lead.id} atualizado: Nome="${firstName}", Débito=R$ ${debtValue}`);
         }
-
-        // Atualizar o banco de dados com os dados oficiais retornados pela API
-        try {
-          const numValue = parseFloat(debtValue.replace(/\./g, '').replace(',', '.')) || null;
-          run(
-            `UPDATE leads SET debt_value = COALESCE(?, debt_value), name = COALESCE(?, name), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-            [numValue, fullName, lead.id]
-          );
-        } catch (dbErr) {}
-
-        console.log(`[DIAL DDM PRE-CHECK SUCESSO] Lead #${lead.id} atualizado: Nome="${firstName}", Débito=R$ ${debtValue}`);
       }
 
       // Tenta simulação com desconto prévia
@@ -130,7 +147,14 @@ async function makeDialDdmCall(lead) {
   const appBaseUrl = process.env.APP_BASE_URL || 'https://veroacordo.grupoddm.ia.br';
   const webhookUrl = `${appBaseUrl}/api/vapi-webhook`;
 
-  // Variáveis dinâmicas para o prompt da IA do Dialog DDM (já com débito e nome oficiais da API da Vero)
+  // Normalizar valor formatado para a fala da IA (ex: 150,90)
+  let formattedDebt = debtValue ? String(debtValue).trim() : '0,00';
+  if (/^\d+(\.\d+)?$/.test(formattedDebt)) {
+    const num = parseFloat(formattedDebt);
+    formattedDebt = num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  // Variáveis dinâmicas para o prompt da IA do Dialog DDM (compatível com {{cliente.contratos[0].valor_total}} e {{cliente.primeiro_nome}})
   const variableValues = {
     nome: shortName,
     nome_cliente: shortName,
@@ -140,11 +164,27 @@ async function makeDialDdmCall(lead) {
     telefone: lead.phone || '',
     cpf: lead.cpf || '',
     email: lead.email || '',
-    valor: debtValue || '0,00',
-    valor_atualizado: debtValue || '0,00',
-    valor_original: debtValue || '0,00',
-    valor_com_desconto: discountValue || debtValue || '0,00',
-    tem_desconto: hasDiscount ? 'sim' : 'nao'
+    valor: formattedDebt,
+    valor_atualizado: formattedDebt,
+    valor_original: formattedDebt,
+    valor_com_desconto: discountValue || formattedDebt,
+    tem_desconto: hasDiscount ? 'sim' : 'nao',
+    // Estrutura aninhada exigida pelo Prompt do Assistente 12
+    cliente: {
+      primeiro_nome: firstName,
+      nome: fullName,
+      contratos: [
+        {
+          valor_total: formattedDebt,
+          valor: formattedDebt
+        }
+      ]
+    },
+    // Chaves literais caso o template engine do Dialog DDM acesse por string plana
+    "cliente.primeiro_nome": firstName,
+    "cliente.nome": fullName,
+    "cliente.contratos[0].valor_total": formattedDebt,
+    "cliente.contratos[0].valor": formattedDebt
   };
 
   if (lead.due_date) variableValues.vencimento = String(lead.due_date);
