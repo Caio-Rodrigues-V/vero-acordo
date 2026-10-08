@@ -53,7 +53,6 @@ interface Lead {
   phone: string;
   cpf?: string;
   debt_value?: number;
-  agreement_value?: number;
   due_date?: string;
   occurrence?: string;
   call_status: 'pending' | 'processing' | 'calling' | 'completed' | 'failed';
@@ -72,9 +71,6 @@ interface DashboardStats {
   total_processed: number;
   total_successful_calls: number;
   total_failed_calls: number;
-  total_agreements?: number;
-  total_agreements_value?: number;
-  total_debt_value?: number;
 }
 
 const BACKEND_URL = window.location.origin.includes('localhost:5173') ? 'http://localhost:3001' : window.location.origin;
@@ -598,9 +594,6 @@ export default function App() {
                   { name: 'Não Atendidas', value: totalNaoAtendidas, color: '#F43F5E' }
                 ];
 
-            const totalAgreements = stats.total_agreements || 0;
-            const totalAgreementsValue = stats.total_agreements_value || 0;
-
             return (
               <div className="w-full space-y-6">
                 {/* Header & Filtros */}
@@ -708,38 +701,46 @@ export default function App() {
                 </div>
 
                 {/* KPIs Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                   <ModernKPICard 
-                    title="1. Base de Leads"
+                    title="1. Base Total de Leads"
                     value={totalLeadsBase.toLocaleString('pt-BR')}
-                    subtitle={isDateFiltered ? `Leads em ${formattedDateLabel}` : "Total de leads cadastrados"}
+                    subtitle={isDateFiltered ? `Leads importados em ${formattedDateLabel}` : "Total de leads cadastrados"}
                     progress={100}
                     colorTheme="slate"
                     indicatorText="Mailing"
                   />
                   <ModernKPICard 
-                    title="2. Taxa de Alô (Hit)"
+                    title="2. Volume Discado"
+                    value={totalDiscados.toLocaleString('pt-BR')}
+                    subtitle={`${(totalLeadsBase > 0 ? (totalDiscados / totalLeadsBase) * 100 : 0).toFixed(1)}% da base discada`}
+                    progress={totalLeadsBase > 0 ? (totalDiscados / totalLeadsBase) * 100 : 0}
+                    colorTheme="cyan"
+                    indicatorText="Tentativas"
+                  />
+                  <ModernKPICard 
+                    title="3. Taxa de Alô (Hit)"
                     value={`${hitRate.toFixed(2).replace('.', ',')}%`}
-                    subtitle={`${totalAtendidas.toLocaleString('pt-BR')} de ${totalDiscados.toLocaleString('pt-BR')} discados`}
+                    subtitle={`${totalAtendidas.toLocaleString('pt-BR')} conexões atendidas`}
                     progress={hitRate}
                     colorTheme="indigo"
                     indicatorText="Hit Rate"
                   />
                   <ModernKPICard 
-                    title="3. Acordos Formalizados"
-                    value={totalAgreements.toLocaleString('pt-BR')}
-                    subtitle={`${totalAtendidas > 0 ? ((totalAgreements / totalAtendidas) * 100).toFixed(1) : '0'}% de conversão nas atendidas`}
-                    progress={totalAtendidas > 0 ? (totalAgreements / totalAtendidas) * 100 : 0}
+                    title="4. Chamadas Atendidas"
+                    value={totalAtendidas.toLocaleString('pt-BR')}
+                    subtitle="Ligações completadas com áudio"
+                    progress={hitRate}
                     colorTheme="emerald"
-                    indicatorText="Acordos"
+                    indicatorText="Conectadas"
                   />
                   <ModernKPICard 
-                    title="4. Valor Total Recuperado"
-                    value={new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalAgreementsValue)}
-                    subtitle={`Valor negociado com desconto`}
-                    progress={100}
-                    colorTheme="cyan"
-                    indicatorText="Financeiro"
+                    title="5. Não Atendidas / Caixa"
+                    value={totalNaoAtendidas.toLocaleString('pt-BR')}
+                    subtitle="Ocupado, sem resposta ou caixa"
+                    progress={totalDiscados > 0 ? (totalNaoAtendidas / totalDiscados) * 100 : 0}
+                    colorTheme="rose"
+                    indicatorText="Incompletas"
                   />
                 </div>
 
@@ -1157,8 +1158,6 @@ export default function App() {
                       <th className="py-3 px-4">Nome do Cliente</th>
                       <th className="py-3 px-4">Telefone</th>
                       <th className="py-3 px-4">CPF</th>
-                      <th className="py-3 px-4">Valor Original</th>
-                      <th className="py-3 px-4">Valor Acordo</th>
                       <th className="py-3 px-4">Status da Chamada</th>
                       <th className="py-3 px-4">Duração</th>
                       <th className="py-3 px-4">Ocorrência (Tabulação)</th>
@@ -1173,16 +1172,6 @@ export default function App() {
                           <td className="py-3 px-4 font-semibold text-slate-800">{l.name}</td>
                           <td className="py-3 px-4">{l.phone}</td>
                           <td className="py-3 px-4 text-slate-500">{l.cpf || '-'}</td>
-                          <td className="py-3 px-4 font-medium text-slate-700">
-                            {l.debt_value ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(l.debt_value) : '-'}
-                          </td>
-                          <td className="py-3 px-4 font-semibold text-emerald-700">
-                            {l.agreement_value 
-                              ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(l.agreement_value) 
-                              : (l.occurrence && (l.occurrence.includes('PROMESSA') || l.occurrence.includes('ACORDO')) && l.debt_value
-                                  ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(l.debt_value)
-                                  : '-')}
-                          </td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               l.call_status === 'completed' && 'bg-emerald-50 text-emerald-700 border border-emerald-200'
@@ -1232,7 +1221,7 @@ export default function App() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={10} className="py-8 text-center text-slate-400">
+                        <td colSpan={8} className="py-8 text-center text-slate-400">
                           Nenhum lead encontrado.
                         </td>
                       </tr>

@@ -122,7 +122,6 @@ function initDb() {
 
   // Migrações para a tabela leads
   safeAddColumn('leads', 'barcode TEXT');
-  safeAddColumn('leads', 'agreement_value REAL');
   safeAddColumn('leads', 'cpf TEXT');
   safeAddColumn('leads', 'dias_atraso INTEGER');
   safeAddColumn('leads', 'status_internet TEXT');
