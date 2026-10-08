@@ -104,25 +104,8 @@ function classifyCallOccurrence({ endedReason, summary, transcript, duration, ta
     return 'CAIXA POSTAL';
   }
 
-  // 3. Tabulações retornadas pela IA
-  if (tabulation && typeof tabulation === 'string' && tabulation.trim().length > 0) {
-    const cleanTab = tabulation.replace(/_/g, ' ').trim().toUpperCase();
-    if (cleanTab.includes('PROMESSA') || cleanTab.includes('ACORDO')) {
-      return 'PROMESSA DE PAGAMENTO - SMS ENVIADO';
-    }
-    if (cleanTab.includes('BOLETO') || cleanTab.includes('2 VIA') || cleanTab.includes('2ª VIA')) {
-      return '2ª VIA BOLETO - SMS ENVIADO';
-    }
-    if (cleanTab.includes('ALEGA')) {
-      return 'ALEGA PAGAMENTO - SMS ENVIADO';
-    }
-    if (cleanTab.includes('RECUSA') || cleanTab.includes('NAO DESEJA') || cleanTab.includes('NÃO DESEJA')) {
-      return 'RECUSA DE PAGAMENTO';
-    }
-    return cleanTab;
-  }
-
-  // 4. Detecção semântica profunda na conversa (transcrição e resumo)
+  // 3. Detecção semântica profunda na conversa (transcrição e resumo)
+  // DEVE RODAR ANTES de checagens técnicas genéricas de tabulation/endedReason
   const fullText = normalizeText(`${summary || ''} ${transcript || ''}`);
 
   // Se o diálogo indica que o cliente aceitou, confirmou ou pediu o boleto/acordo
@@ -151,7 +134,11 @@ function classifyCallOccurrence({ endedReason, summary, transcript, duration, ta
     fullText.includes('pode enviar') ||
     fullText.includes('vou pagar') ||
     fullText.includes('pago amanha') ||
-    fullText.includes('pago hoje')
+    fullText.includes('pago hoje') ||
+    fullText.includes('esse acordo e uma prova documental') ||
+    fullText.includes('acordo e uma prova documental') ||
+    fullText.includes('contamos com a sua pontualidade') ||
+    fullText.includes('posso confirmar o pagamento ate amanha') && fullText.includes('pode')
   );
 
   if (hasPromiseSignal && dur >= 3) {
@@ -163,7 +150,7 @@ function classifyCallOccurrence({ endedReason, summary, transcript, duration, ta
     return 'ALEGA PAGAMENTO - SMS ENVIADO';
   }
 
-  // Se houve recusa explícita
+  // Se houve recusa explícita no diálogo
   if (
     fullText.includes('recusa de pagamento') || 
     fullText.includes('nao tem interesse') || 
@@ -176,6 +163,26 @@ function classifyCallOccurrence({ endedReason, summary, transcript, duration, ta
     fullText.includes('nao desejo negociar')
   ) {
     return 'RECUSA DE PAGAMENTO';
+  }
+
+  // 4. Tabulações explícitas retornadas pela IA/Gateway
+  if (tabulation && typeof tabulation === 'string' && tabulation.trim().length > 0) {
+    const cleanTab = tabulation.replace(/_/g, ' ').trim().toUpperCase();
+    if (cleanTab.includes('PROMESSA') || cleanTab.includes('ACORDO')) {
+      return 'PROMESSA DE PAGAMENTO - SMS ENVIADO';
+    }
+    if (cleanTab.includes('BOLETO') || cleanTab.includes('2 VIA') || cleanTab.includes('2ª VIA')) {
+      return '2ª VIA BOLETO - SMS ENVIADO';
+    }
+    if (cleanTab.includes('ALEGA')) {
+      return 'ALEGA PAGAMENTO - SMS ENVIADO';
+    }
+    if (cleanTab.includes('RECUSA') || cleanTab.includes('NAO DESEJA') || cleanTab.includes('NÃO DESEJA')) {
+      return 'RECUSA DE PAGAMENTO';
+    }
+    if (cleanTab !== 'CUSTOMER-ENDED-CALL' && cleanTab !== 'USER-HANGUP' && cleanTab !== 'ATENDEU E DESLIGOU' && cleanTab !== 'CALL-DROPPED') {
+      return cleanTab;
+    }
   }
 
   // 5. Queda de chamada ou silêncio
