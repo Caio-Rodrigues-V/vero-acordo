@@ -204,7 +204,17 @@ async function makeDialDdmCall(lead) {
     serverUrl: webhookUrl,
     maxConcurrency: maxConcurrency,
     assistantOverrides: {
-      variableValues: variableValues
+      variableValues: variableValues,
+      voice: {
+        provider: 'elevenlabs',
+        voiceId: 'PznTnBc8X6pvixs9UkQm',
+        model: 'eleven_turbo_v2_5',
+        stability: 0.65,
+        similarityBoost: 0.75,
+        fillerInjectionEnabled: false,
+        backchannelingEnabled: false
+      },
+      backgroundSound: 'off'
     }
   };
 

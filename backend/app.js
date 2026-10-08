@@ -1687,15 +1687,26 @@ app.post('/api/vapi-webhook', async (req, res) => {
           }
 
           console.log(`[AI TOOL CALL] ${funcName} concluído com sucesso em ${Date.now() - toolStartTime}ms`);
+          
+          // Formatar resultado legível para a IA não sofrer oscilação ao sintetizar dados crus
+          let returnResult = '';
+          if (normFunc.includes('fechar') || normFunc.includes('conclusao')) {
+            returnResult = `Acordo fechado com sucesso. Vencimento: ${data.Vencimento || 'Amanhã'}. Boleto gerado e enviado para o email do cliente.`;
+          } else if (normFunc.includes('check') || normFunc.includes('consultar')) {
+            returnResult = JSON.stringify(data);
+          } else {
+            returnResult = typeof data === 'string' ? data : JSON.stringify(data);
+          }
+
           return {
             toolCallId: tc.id,
-            result: JSON.stringify(data)
+            result: returnResult
           };
         } catch (err) {
           console.error(`[AI TOOL CALL ERROR] Falha ao executar ${funcName} após ${Date.now() - toolStartTime}ms:`, err.message);
           return {
             toolCallId: tc.id,
-            result: JSON.stringify({ error: err.message })
+            result: `Não foi possível consultar os dados neste momento.`
           };
         }
       }));
