@@ -42,6 +42,59 @@ function setCached(key, data) {
   queryCache.set(key, { data, timestamp: Date.now() });
 }
 
+const https = require('https');
+const http = require('http');
+
+/**
+ * Cliente HTTP/HTTPS resiliente para a API Vero (evita Connect Timeout do Undici/Node Fetch em servidores lentos)
+ */
+function sendVeroHttpRequest(targetUrl) {
+  return new Promise((resolve, reject) => {
+    try {
+      const parsed = new URL(targetUrl);
+      const isHttps = parsed.protocol === 'https:';
+      const lib = isHttps ? https : http;
+
+      const req = lib.request(
+        targetUrl,
+        {
+          method: 'GET',
+          rejectUnauthorized: false,
+          headers: {
+            'Authorization': getAuthHeader(),
+            'Accept': 'application/json',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) VeroAcordo/1.0'
+          },
+          timeout: 30000
+        },
+        (res) => {
+          let data = '';
+          res.on('data', chunk => { data += chunk; });
+          res.on('end', () => {
+            resolve({
+              ok: res.statusCode >= 200 && res.statusCode < 400,
+              status: res.statusCode,
+              text: () => Promise.resolve(data)
+            });
+          });
+        }
+      );
+
+      req.on('timeout', () => {
+        req.destroy(new Error('Timeout de 30s na conexão com API Vero'));
+      });
+
+      req.on('error', (err) => {
+        reject(err);
+      });
+
+      req.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
 /**
  * 1. Check (dados do cliente e contratos)
  * curl -i -u "USUARIO:SENHA" "https://vero2.meuacordofacil.com.br/api/cliente/check?cpf=89690770063"
@@ -61,21 +114,8 @@ async function checkCliente(cpf) {
   console.log(`[VERO ACORDO API] GET /check para CPF: ${clean}`);
   const startTime = Date.now();
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000); // 6s timeout para não prender a chamada
-
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': getAuthHeader(),
-        'Accept': 'application/json',
-        'Connection': 'keep-alive'
-      },
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
+    const res = await sendVeroHttpRequest(url);
     const duration = Date.now() - startTime;
     console.log(`[VERO ACORDO API] /check respondeu em ${duration}ms para CPF: ${clean} (Status HTTP: ${res.status})`);
 
@@ -92,7 +132,6 @@ async function checkCliente(cpf) {
     }
     return parsed;
   } catch (err) {
-    clearTimeout(timeoutId);
     console.error(`[VERO ACORDO API ERROR] Falha no /check após ${Date.now() - startTime}ms:`, err.message);
     throw err;
   }
@@ -116,21 +155,9 @@ async function simularAVista(cpf) {
   const url = `${BASE_URL}/simulacao?cpf=${clean}`;
   console.log(`[VERO ACORDO API] GET /simulacao para CPF: ${clean}`);
   const startTime = Date.now();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
 
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': getAuthHeader(),
-        'Accept': 'application/json',
-        'Connection': 'keep-alive'
-      },
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
+    const res = await sendVeroHttpRequest(url);
     const duration = Date.now() - startTime;
     console.log(`[VERO ACORDO API] /simulacao respondeu em ${duration}ms para CPF: ${clean} (Status HTTP: ${res.status})`);
 
@@ -147,7 +174,6 @@ async function simularAVista(cpf) {
     }
     return parsed;
   } catch (err) {
-    clearTimeout(timeoutId);
     console.error(`[VERO ACORDO API ERROR] Falha no /simulacao após ${Date.now() - startTime}ms:`, err.message);
     throw err;
   }
@@ -171,21 +197,9 @@ async function simularParcelas(cpf) {
   const url = `${BASE_URL}/simulacoes?cpf=${clean}`;
   console.log(`[VERO ACORDO API] GET /simulacoes para CPF: ${clean}`);
   const startTime = Date.now();
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
 
   try {
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': getAuthHeader(),
-        'Accept': 'application/json',
-        'Connection': 'keep-alive'
-      },
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
+    const res = await sendVeroHttpRequest(url);
     const duration = Date.now() - startTime;
     console.log(`[VERO ACORDO API] /simulacoes respondeu em ${duration}ms para CPF: ${clean} (Status HTTP: ${res.status})`);
 
@@ -202,7 +216,6 @@ async function simularParcelas(cpf) {
     }
     return parsed;
   } catch (err) {
-    clearTimeout(timeoutId);
     console.error(`[VERO ACORDO API ERROR] Falha no /simulacoes após ${Date.now() - startTime}ms:`, err.message);
     throw err;
   }
@@ -217,21 +230,19 @@ async function fecharAcordoAVista(cpf) {
   if (!clean) throw new Error('CPF é obrigatório.');
 
   const url = `${BASE_URL}/conclusao?cpf=${clean}`;
-  console.log(`[VERO ACORDO API] POST/GET /conclusao para CPF: ${clean}`);
+  console.log(`[VERO ACORDO API] GET /conclusao para CPF: ${clean}`);
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Authorization': getAuthHeader(),
-      'Accept': 'application/json'
-    }
-  });
-
-  const text = await res.text();
   try {
-    return JSON.parse(text);
-  } catch (e) {
-    return { status: res.status, raw: text };
+    const res = await sendVeroHttpRequest(url);
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return { status: res.status, raw: text };
+    }
+  } catch (err) {
+    console.error(`[VERO ACORDO API ERROR] Falha no /conclusao:`, err.message);
+    throw err;
   }
 }
 
@@ -246,19 +257,17 @@ async function fecharAcordoParcelado(cpf, parcelas = 1) {
   const url = `${BASE_URL}/conclusao-parcela?cpf=${clean}&parcelas=${encodeURIComponent(parcelas)}`;
   console.log(`[VERO ACORDO API] GET /conclusao-parcela para CPF: ${clean}, parcelas: ${parcelas}`);
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Authorization': getAuthHeader(),
-      'Accept': 'application/json'
-    }
-  });
-
-  const text = await res.text();
   try {
-    return JSON.parse(text);
-  } catch (e) {
-    return { status: res.status, raw: text };
+    const res = await sendVeroHttpRequest(url);
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return { status: res.status, raw: text };
+    }
+  } catch (err) {
+    console.error(`[VERO ACORDO API ERROR] Falha no /conclusao-parcela:`, err.message);
+    throw err;
   }
 }
 
@@ -273,19 +282,17 @@ async function consultarAcordo(cpf) {
   const url = `${BASE_URL}/acordo?cpf=${clean}`;
   console.log(`[VERO ACORDO API] GET /acordo para CPF: ${clean}`);
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: {
-      'Authorization': getAuthHeader(),
-      'Accept': 'application/json'
-    }
-  });
-
-  const text = await res.text();
   try {
-    return JSON.parse(text);
-  } catch (e) {
-    return { status: res.status, raw: text };
+    const res = await sendVeroHttpRequest(url);
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      return { status: res.status, raw: text };
+    }
+  } catch (err) {
+    console.error(`[VERO ACORDO API ERROR] Falha no /acordo:`, err.message);
+    throw err;
   }
 }
 
