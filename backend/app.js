@@ -1481,6 +1481,55 @@ app.all('/api/tools/resend-answered-sms', async (req, res) => {
 });
 
 /**
+ * Rota para reclassificar e corrigir imediatamente todas as ocorrências de chamadas
+ * analisando a transcrição gravada no banco.
+ */
+app.all('/api/tools/reclassify-leads', (req, res) => {
+  try {
+    const leadsWithTranscript = all(`
+      SELECT id, name, phone, transcript, call_log, call_duration, occurrence, campaign_id
+      FROM leads
+      WHERE (transcript IS NOT NULL AND transcript != '')
+         OR (call_log IS NOT NULL AND call_log != '')
+    `);
+
+    let updatedCount = 0;
+    const updatedLeads = [];
+
+    for (const l of leadsWithTranscript) {
+      const newOcc = classifyCallOccurrence({
+        duration: l.call_duration || 0,
+        transcript: l.transcript || '',
+        summary: l.call_log || '',
+        endedReason: 'customer-ended-call'
+      });
+
+      if (newOcc && newOcc !== l.occurrence) {
+        run('UPDATE leads SET occurrence = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newOcc, l.id]);
+        updatedCount++;
+        updatedLeads.push({ id: l.id, name: l.name, oldOcc: l.occurrence, newOcc });
+      }
+    }
+
+    // Atualizar estatísticas das campanhas afetadas
+    const campaignIds = [...new Set(leadsWithTranscript.map(l => l.campaign_id).filter(Boolean))];
+    const { updateCampaignStats } = require('./services/stats.js');
+    campaignIds.forEach(cid => {
+      try { updateCampaignStats(cid); } catch (e) {}
+    });
+
+    res.json({
+      success: true,
+      message: `Reclassificação concluída! ${updatedCount} leads foram atualizados.`,
+      updatedCount,
+      updatedLeads
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
  * Consulta em tempo real a capacidade e concorrência dos 500 canais do Dialog DDM
  */
 app.get('/api/tools/dialddm-concurrency', async (req, res) => {
