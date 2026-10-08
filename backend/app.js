@@ -1822,6 +1822,30 @@ app.post('/api/vapi-webhook', async (req, res) => {
     // Recalcular as estatísticas totais da campanha no banco usando a função centralizada
     updateCampaignStats(campaignId);
 
+    // Se houve promessa de pagamento, acordo ou contato com CPC válido e ainda não disparou SMS/E-mail
+    if (callStatus === 'completed' && (occurrence.includes('PROMESSA') || occurrence.includes('ACORDO') || occurrence.includes('2ª VIA') || validCpcOccurrences.includes(occurrence))) {
+      try {
+        const comm = require('./services/communication.js');
+        const updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
+        if (updatedLead) {
+          if (updatedLead.sms_status !== 'completed') {
+            comm.dispatchSmsOrRcs(updatedLead).then(r => {
+              const st = r.success ? 'completed' : 'failed';
+              run('UPDATE leads SET sms_status = ?, sms_log = ? WHERE id = ?', [st, r.log, leadId]);
+            }).catch(e => console.error('[POST-CALL SMS ERROR]', e.message));
+          }
+          if (updatedLead.email && updatedLead.email_status !== 'completed') {
+            comm.sendCpanelSmtpEmail(updatedLead).then(r => {
+              const st = r.success ? 'completed' : 'failed';
+              run('UPDATE leads SET email_status = ?, email_log = ? WHERE id = ?', [st, r.log, leadId]);
+            }).catch(e => console.error('[POST-CALL EMAIL ERROR]', e.message));
+          }
+        }
+      } catch (postDispatchErr) {
+        console.error('[POST-CALL DISPATCH ERROR]', postDispatchErr.message);
+      }
+    }
+
     res.json({ success: true, message: 'Webhook processado com sucesso.' });
 
   } catch (error) {

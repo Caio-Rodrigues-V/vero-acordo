@@ -107,15 +107,89 @@ function classifyCallOccurrence({ endedReason, summary, transcript, duration, ta
   // 3. Tabulações retornadas pela IA
   if (tabulation && typeof tabulation === 'string' && tabulation.trim().length > 0) {
     const cleanTab = tabulation.replace(/_/g, ' ').trim().toUpperCase();
+    if (cleanTab.includes('PROMESSA') || cleanTab.includes('ACORDO')) {
+      return 'PROMESSA DE PAGAMENTO - SMS ENVIADO';
+    }
+    if (cleanTab.includes('BOLETO') || cleanTab.includes('2 VIA') || cleanTab.includes('2ª VIA')) {
+      return '2ª VIA BOLETO - SMS ENVIADO';
+    }
+    if (cleanTab.includes('ALEGA')) {
+      return 'ALEGA PAGAMENTO - SMS ENVIADO';
+    }
+    if (cleanTab.includes('RECUSA') || cleanTab.includes('NAO DESEJA') || cleanTab.includes('NÃO DESEJA')) {
+      return 'RECUSA DE PAGAMENTO';
+    }
     return cleanTab;
   }
 
+  // 4. Detecção semântica profunda na conversa (transcrição e resumo)
+  const fullText = normalizeText(`${summary || ''} ${transcript || ''}`);
+
+  // Se o diálogo indica que o cliente aceitou, confirmou ou pediu o boleto/acordo
+  const hasPromiseSignal = (
+    fullText.includes('promessa de pagamento') ||
+    fullText.includes('confirmou o pagamento') ||
+    fullText.includes('aceitou a proposta') ||
+    fullText.includes('aceitou a oferta') ||
+    fullText.includes('fechar essa proposta') ||
+    fullText.includes('fechar a proposta') ||
+    fullText.includes('fechar acordo') ||
+    fullText.includes('quero fechar') ||
+    fullText.includes('vou fechar') ||
+    fullText.includes('pode fechar') ||
+    fullText.includes('acordo parcelado') ||
+    fullText.includes('enviarei o boleto') ||
+    fullText.includes('enviar o boleto') ||
+    fullText.includes('enviar o link') ||
+    fullText.includes('manda o boleto') ||
+    fullText.includes('manda por email') ||
+    fullText.includes('manda no email') ||
+    fullText.includes('manda no zap') ||
+    fullText.includes('manda no whatsapp') ||
+    fullText.includes('manda no celular') ||
+    fullText.includes('pode mandar') ||
+    fullText.includes('pode enviar') ||
+    fullText.includes('vou pagar') ||
+    fullText.includes('pago amanha') ||
+    fullText.includes('pago hoje')
+  );
+
+  if (hasPromiseSignal && dur >= 3) {
+    return 'PROMESSA DE PAGAMENTO - SMS ENVIADO';
+  }
+
+  // Se o cliente alegou que já pagou
+  if (fullText.includes('ja paguei') || fullText.includes('ja fiz o pagamento') || fullText.includes('ja esta pago') || fullText.includes('alega pagamento')) {
+    return 'ALEGA PAGAMENTO - SMS ENVIADO';
+  }
+
+  // Se houve recusa explícita
+  if (
+    fullText.includes('recusa de pagamento') || 
+    fullText.includes('nao tem interesse') || 
+    fullText.includes('nao tenho interesse') || 
+    fullText.includes('sem interesse') || 
+    fullText.includes('nao vou pagar') || 
+    fullText.includes('nao quero pagar') || 
+    fullText.includes('nao quer pagar') || 
+    fullText.includes('nao deseja negociar') ||
+    fullText.includes('nao desejo negociar')
+  ) {
+    return 'RECUSA DE PAGAMENTO';
+  }
+
+  // 5. Queda de chamada ou silêncio
   if (
     reason === 'silence-timed-out' || 
     reason === 'silence' ||
     code === 'MUTE_SILENCE'
   ) {
     return 'LIGAÇÃO MUDA';
+  }
+
+  // Se o cliente falou e a chamada durou mais de 10s, mas desligou sem recusar nem prometer
+  if (dur >= 10 && hasSpeech) {
+    return 'ATENDEU - SMS ENVIADO';
   }
 
   if (
@@ -126,8 +200,8 @@ function classifyCallOccurrence({ endedReason, summary, transcript, duration, ta
     return 'ATENDEU E DESLIGOU';
   }
 
-  // 4. Qualquer chamada conectada com duração > 0
-  return 'ATENDIDA';
+  // 6. Qualquer chamada conectada com duração > 0
+  return 'ATENDEU - SMS ENVIADO';
 }
 
 /**
