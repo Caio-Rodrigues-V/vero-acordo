@@ -188,7 +188,10 @@ async function sendCpanelSmtpEmail(lead) {
     ? `<tr><td style="padding:6px 0;word-break:break-all;"><strong>Linha Digitável:</strong> ${cleanBarcode}</td></tr>`
     : `<tr><td style="padding:6px 0;word-break:break-all;"><strong>Linha Digitável:</strong> Consulte pelo aplicativo Minha Vero</td></tr>`;
 
-  // Template HTML adaptado para a Vero Internet
+  const logoPath = path.join(__dirname, '../public/logo_vero.png');
+  const hasLocalLogo = fs.existsSync(logoPath);
+
+  // Template HTML adaptado para a Vero Internet com logo oficial e estilo responsivo
   const htmlBody = `
 <!DOCTYPE html>
 <html>
@@ -204,8 +207,8 @@ async function sendCpanelSmtpEmail(lead) {
       <td align="center">
         <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
           <tr>
-            <td style="background-color:#ffffff;padding:24px 32px;text-align:left;border-bottom:1px solid #FAF7F4;">
-              <img src="${logoUrl}" alt="Vero Internet" height="42" style="display:block;">
+            <td style="background-color:#ffffff;padding:24px 32px;text-align:left;border-bottom:2px solid #f2eef8;">
+              <img src="${hasLocalLogo ? 'cid:logovero' : logoUrl}" alt="Vero Internet" height="42" style="display:block;border:0;">
             </td>
           </tr>
           <tr>
@@ -242,12 +245,23 @@ async function sendCpanelSmtpEmail(lead) {
     console.log(`[SMTP Email cPanel] Enviando e-mail de ${fromEmail} para ${targetEmail}...`);
     const transporter = getSmtpTransporter();
 
-    const info = await transporter.sendMail({
+    const mailOptions = {
       from: `"${fromName}" <${fromEmail}>`,
       to: targetEmail,
       subject: `Fatura e Boleto de Acordo — Vero Internet`,
-      html: htmlBody
-    });
+      html: htmlBody,
+      attachments: []
+    };
+
+    if (hasLocalLogo) {
+      mailOptions.attachments.push({
+        filename: 'logo_vero.png',
+        path: logoPath,
+        cid: 'logovero'
+      });
+    }
+
+    const info = await transporter.sendMail(mailOptions);
 
     console.log(`[SMTP Email cPanel] E-mail enviado com sucesso para ${targetEmail}. MessageID: ${info.messageId}`);
     return {
