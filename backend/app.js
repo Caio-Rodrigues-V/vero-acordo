@@ -82,7 +82,10 @@ app.get('/api/dashboard/stats', (req, res) => {
           COUNT(l.id) as total_leads,
           SUM(CASE WHEN l.call_status IN ('completed', 'failed') THEN 1 ELSE 0 END) as total_processed,
           SUM(CASE WHEN l.call_status = 'completed' THEN 1 ELSE 0 END) as total_successful_calls,
-          SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls
+          SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls,
+          SUM(CASE WHEN l.occurrence LIKE '%PROMESSA%' OR l.occurrence LIKE '%ACORDO%' THEN 1 ELSE 0 END) as total_agreements,
+          SUM(CASE WHEN (l.occurrence LIKE '%PROMESSA%' OR l.occurrence LIKE '%ACORDO%') THEN COALESCE(l.agreement_value, l.debt_value, 0) ELSE 0 END) as total_agreements_value,
+          SUM(COALESCE(l.debt_value, 0)) as total_debt_value
         FROM leads l
         INNER JOIN campaigns c ON l.campaign_id = c.id
         WHERE (
@@ -99,7 +102,10 @@ app.get('/api/dashboard/stats', (req, res) => {
             COUNT(l.id) as total_leads,
             SUM(CASE WHEN l.call_status IN ('completed', 'failed') THEN 1 ELSE 0 END) as total_processed,
             SUM(CASE WHEN l.call_status = 'completed' THEN 1 ELSE 0 END) as total_successful_calls,
-            SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls
+            SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls,
+            SUM(CASE WHEN l.occurrence LIKE '%PROMESSA%' OR l.occurrence LIKE '%ACORDO%' THEN 1 ELSE 0 END) as total_agreements,
+            SUM(CASE WHEN (l.occurrence LIKE '%PROMESSA%' OR l.occurrence LIKE '%ACORDO%') THEN COALESCE(l.agreement_value, l.debt_value, 0) ELSE 0 END) as total_agreements_value,
+            SUM(COALESCE(l.debt_value, 0)) as total_debt_value
           FROM leads l
           WHERE l.campaign_id = ?
         `;
@@ -129,7 +135,10 @@ app.get('/api/dashboard/stats', (req, res) => {
         total_unique_leads: dayStats.unique_leads || dayStats.total_leads || 0,
         total_processed: dayStats.total_processed || 0,
         total_successful_calls: dayStats.total_successful_calls || 0,
-        total_failed_calls: dayStats.total_failed_calls || 0
+        total_failed_calls: dayStats.total_failed_calls || 0,
+        total_agreements: dayStats.total_agreements || 0,
+        total_agreements_value: dayStats.total_agreements_value || 0,
+        total_debt_value: dayStats.total_debt_value || 0
       });
     }
 
@@ -141,7 +150,10 @@ app.get('/api/dashboard/stats', (req, res) => {
         COUNT(l.id) as total_leads,
         SUM(CASE WHEN l.call_status IN ('completed', 'failed') THEN 1 ELSE 0 END) as total_processed,
         SUM(CASE WHEN l.call_status = 'completed' THEN 1 ELSE 0 END) as total_successful_calls,
-        SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls
+        SUM(CASE WHEN l.call_status = 'failed' THEN 1 ELSE 0 END) as total_failed_calls,
+        SUM(CASE WHEN l.occurrence LIKE '%PROMESSA%' OR l.occurrence LIKE '%ACORDO%' THEN 1 ELSE 0 END) as total_agreements,
+        SUM(CASE WHEN (l.occurrence LIKE '%PROMESSA%' OR l.occurrence LIKE '%ACORDO%') THEN COALESCE(l.agreement_value, l.debt_value, 0) ELSE 0 END) as total_agreements_value,
+        SUM(COALESCE(l.debt_value, 0)) as total_debt_value
       FROM leads l
     `;
     const params = [];
@@ -158,7 +170,10 @@ app.get('/api/dashboard/stats', (req, res) => {
       total_unique_leads: overallStats.unique_leads || overallStats.total_leads || 0,
       total_processed: overallStats.total_processed || 0,
       total_successful_calls: overallStats.total_successful_calls || 0,
-      total_failed_calls: overallStats.total_failed_calls || 0
+      total_failed_calls: overallStats.total_failed_calls || 0,
+      total_agreements: overallStats.total_agreements || 0,
+      total_agreements_value: overallStats.total_agreements_value || 0,
+      total_debt_value: overallStats.total_debt_value || 0
     });
   } catch (error) {
     console.error('Erro ao buscar estatísticas do dashboard:', error);
@@ -1645,15 +1660,17 @@ app.post('/api/vapi-webhook', async (req, res) => {
               const returnedEmail = data.email || null;
               const returnedBarcode = data.LinhaBoleto || data.linha_digitavel || null;
               const returnedDue = data.Vencimento || null;
+              const returnedVal = data.valor ? parseFloat(String(data.valor).replace(/\./g, '').replace(',', '.')) : null;
               try {
                 run(
                   `UPDATE leads SET 
                      email = COALESCE(?, email), 
                      barcode = COALESCE(?, barcode), 
                      due_date = COALESCE(?, due_date),
+                     agreement_value = COALESCE(?, agreement_value),
                      updated_at = CURRENT_TIMESTAMP 
                    WHERE id = ?`,
-                  [returnedEmail, returnedBarcode, returnedDue, leadId]
+                  [returnedEmail, returnedBarcode, returnedDue, returnedVal, leadId]
                 );
                 // Disparo de e-mail e SMS com o acordo fechado
                 const updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
@@ -1913,16 +1930,21 @@ app.post('/api/vapi-webhook', async (req, res) => {
               const returnedEmail = acordoData.email || null;
               const returnedBarcode = acordoData.LinhaBoleto || acordoData.linha_digitavel || null;
               const returnedDue = acordoData.Vencimento || null;
+              let returnedVal = null;
+              if (acordoData.valor) {
+                returnedVal = parseFloat(String(acordoData.valor).replace(/\./g, '').replace(',', '.'));
+              }
               run(
                 `UPDATE leads SET 
                    email = COALESCE(?, email), 
                    barcode = COALESCE(?, barcode), 
                    due_date = COALESCE(?, due_date),
+                   agreement_value = COALESCE(?, agreement_value),
                    updated_at = CURRENT_TIMESTAMP 
                  WHERE id = ?`,
-                [returnedEmail, returnedBarcode, returnedDue, leadId]
+                [returnedEmail, returnedBarcode, returnedDue, returnedVal, leadId]
               );
-              console.log(`[POST-CALL ACORDO] Dados do acordo obtidos com sucesso: Boleto="${returnedBarcode}" | Vencimento="${returnedDue}" | Email="${returnedEmail}"`);
+              console.log(`[POST-CALL ACORDO] Dados do acordo obtidos com sucesso: Boleto="${returnedBarcode}" | Vencimento="${returnedDue}" | Valor="${returnedVal}" | Email="${returnedEmail}"`);
               updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
             }
           } catch (acordoErr) {
