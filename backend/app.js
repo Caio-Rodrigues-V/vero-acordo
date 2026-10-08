@@ -1592,11 +1592,91 @@ app.post('/api/vapi-webhook', async (req, res) => {
             data = await veroAcordo.simularParcelas(targetCpf);
           } else if (normFunc.includes('fecharavista') || normFunc.includes('conclusaovista') || (normFunc.includes('conclusao') && !normFunc.includes('parcela'))) {
             data = await veroAcordo.fecharAcordoAVista(targetCpf);
+            if (data && !data.error && leadId) {
+              const returnedEmail = data.email || null;
+              const returnedBarcode = data.LinhaBoleto || data.linha_digitavel || null;
+              const returnedDue = data.Vencimento || null;
+              try {
+                run(
+                  `UPDATE leads SET 
+                     email = COALESCE(?, email), 
+                     barcode = COALESCE(?, barcode), 
+                     due_date = COALESCE(?, due_date),
+                     updated_at = CURRENT_TIMESTAMP 
+                   WHERE id = ?`,
+                  [returnedEmail, returnedBarcode, returnedDue, leadId]
+                );
+                // Disparo de e-mail e SMS com o acordo fechado
+                const updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
+                if (updatedLead) {
+                  const comm = require('./services/communication.js');
+                  if (updatedLead.email) {
+                    comm.sendCpanelSmtpEmail(updatedLead).then(r => {
+                      const st = r.success ? 'completed' : 'failed';
+                      run('UPDATE leads SET email_status = ?, email_log = ? WHERE id = ?', [st, r.log, leadId]);
+                    }).catch(e => console.error('[AUTO EMAIL ERROR]', e.message));
+                  }
+                  comm.dispatchSmsOrRcs(updatedLead).then(r => {
+                    const st = r.success ? 'completed' : 'failed';
+                    run('UPDATE leads SET sms_status = ?, sms_log = ? WHERE id = ?', [st, r.log, leadId]);
+                  }).catch(e => console.error('[AUTO SMS ERROR]', e.message));
+                }
+              } catch (saveErr) {
+                console.error('[TOOL CALL SAVE ERROR]', saveErr.message);
+              }
+            }
           } else if (normFunc.includes('fecharparcelado') || normFunc.includes('conclusaoparcela') || normFunc.includes('parcelar')) {
             const parcelas = parsedArgs.parcelas || parsedArgs.qtd_parcelas || 1;
             data = await veroAcordo.fecharAcordoParcelado(targetCpf, parcelas);
+            if (data && !data.error && leadId) {
+              const returnedEmail = data.email || null;
+              const returnedBarcode = data.LinhaBoleto || data.linha_digitavel || null;
+              const returnedDue = data.Vencimento || null;
+              try {
+                run(
+                  `UPDATE leads SET 
+                     email = COALESCE(?, email), 
+                     barcode = COALESCE(?, barcode), 
+                     due_date = COALESCE(?, due_date),
+                     updated_at = CURRENT_TIMESTAMP 
+                   WHERE id = ?`,
+                  [returnedEmail, returnedBarcode, returnedDue, leadId]
+                );
+                const updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
+                if (updatedLead) {
+                  const comm = require('./services/communication.js');
+                  if (updatedLead.email) {
+                    comm.sendCpanelSmtpEmail(updatedLead).then(r => {
+                      const st = r.success ? 'completed' : 'failed';
+                      run('UPDATE leads SET email_status = ?, email_log = ? WHERE id = ?', [st, r.log, leadId]);
+                    }).catch(e => console.error('[AUTO EMAIL ERROR]', e.message));
+                  }
+                  comm.dispatchSmsOrRcs(updatedLead).then(r => {
+                    const st = r.success ? 'completed' : 'failed';
+                    run('UPDATE leads SET sms_status = ?, sms_log = ? WHERE id = ?', [st, r.log, leadId]);
+                  }).catch(e => console.error('[AUTO SMS ERROR]', e.message));
+                }
+              } catch (saveErr) {}
+            }
           } else if (normFunc.includes('consultaracordo') || normFunc.includes('acordo')) {
             data = await veroAcordo.consultarAcordo(targetCpf);
+            if (data && !data.error && leadId) {
+              const item = data.LinhaBoleto?.Item || data;
+              const returnedBarcode = item.Linha || item.LinhaBoleto || null;
+              const returnedDue = item.vencimento || item.Vencimento || null;
+              const returnedVal = item.valor ? parseFloat(String(item.valor).replace(/\./g, '').replace(',', '.')) : null;
+              try {
+                run(
+                  `UPDATE leads SET 
+                     barcode = COALESCE(?, barcode), 
+                     due_date = COALESCE(?, due_date),
+                     debt_value = COALESCE(?, debt_value),
+                     updated_at = CURRENT_TIMESTAMP 
+                   WHERE id = ?`,
+                  [returnedBarcode, returnedDue, returnedVal, leadId]
+                );
+              } catch (saveErr) {}
+            }
           } else if (normFunc.includes('voicemail')) {
             return {
               toolCallId: tc.id,

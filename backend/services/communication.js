@@ -132,17 +132,40 @@ async function triggerUnipixSms(lead) {
   }
 }
 
+const nodemailer = require('nodemailer');
+
+let smtpTransporter = null;
+
+function getSmtpTransporter() {
+  if (!smtpTransporter) {
+    const host = process.env.SMTP_HOST || 'mail.grupoddm.ia.br';
+    const port = parseInt(process.env.SMTP_PORT || '465', 10);
+    const secure = process.env.SMTP_SECURE !== 'false'; // 465 é SSL/TLS (secure: true)
+    const user = process.env.SMTP_USER || 'vero@grupoddm.ia.br';
+    const pass = (process.env.SMTP_PASS || 'vero@@!ERDdm').replace(/^["']|["']$/g, '');
+
+    smtpTransporter = nodemailer.createTransport({
+      host,
+      port,
+      secure,
+      auth: { user, pass },
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+  }
+  return smtpTransporter;
+}
+
 /**
- * Envia um e-mail com o boleto/acordo usando a API da Locaweb SMTPlw.
+ * Envia um e-mail com o boleto/acordo usando SMTP do cPanel (vero@grupoddm.ia.br).
  * 
  * @param {object} lead - O objeto do lead
  * @returns {Promise<{success: boolean, log: string}>}
  */
-async function sendLocawebEmail(lead) {
-  const token = process.env.LOCAWEB_TOKEN || '45790aba479f30ec65f106995d8e7424';
-  const fromName = process.env.LOCAWEB_FROM_NAME || 'Vero Internet';
-  const fromEmail = process.env.LOCAWEB_FROM || 'verointernet@grupoddm.com.br';
-  const apiUrl = 'https://api.smtplw.com.br/v1/messages';
+async function sendCpanelSmtpEmail(lead) {
+  const fromName = process.env.SMTP_FROM_NAME || 'Vero Internet';
+  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'vero@grupoddm.ia.br';
 
   // Se houver TEST_EMAIL no .env, redireciona o e-mail para o teste
   const targetEmail = process.env.TEST_EMAIL || lead.email;
@@ -152,22 +175,18 @@ async function sendLocawebEmail(lead) {
   }
 
   if (process.env.TEST_EMAIL) {
-    console.log(`[Locaweb Email - MODO TESTE] Redirecionando e-mail do Lead #${lead.id} (${lead.email || 'sem e-mail'}) para o e-mail de teste: ${targetEmail}`);
+    console.log(`[SMTP Email - MODO TESTE] Redirecionando e-mail do Lead #${lead.id} (${lead.email || 'sem e-mail'}) para o e-mail de teste: ${targetEmail}`);
   }
 
-  // Se não houver código de barras, gera aviso
-  if (!lead.barcode) {
-    console.log(`[Locaweb Email] Lead #${lead.id} não possui linha digitável. Abortando envio.`);
-    return {
-      success: false,
-      log: 'Cancelado: Lead não possui linha digitável.'
-    };
-  }
+  const cleanBarcode = String(lead.barcode || '').trim();
+  const valorFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(lead.debt_value || 0);
 
-  const valorFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(lead.debt_value);
-
-  const baseUrl = process.env.APP_BASE_URL || 'https://verolembrete.grupoddm.ia.br';
+  const baseUrl = process.env.APP_BASE_URL || 'https://veroacordo.grupoddm.ia.br';
   const logoUrl = `${baseUrl}/logo_vero.png`;
+
+  const barcodeBlock = cleanBarcode
+    ? `<tr><td style="padding:6px 0;word-break:break-all;"><strong>Linha Digitável:</strong> ${cleanBarcode}</td></tr>`
+    : `<tr><td style="padding:6px 0;word-break:break-all;"><strong>Linha Digitável:</strong> Consulte pelo aplicativo Minha Vero</td></tr>`;
 
   // Template HTML adaptado para a Vero Internet
   const htmlBody = `
@@ -191,22 +210,22 @@ async function sendLocawebEmail(lead) {
           </tr>
           <tr>
             <td style="padding:32px;font-size:15px;line-height:1.7;color:#1F1F1F;">
-              <h2 style="color:#5b1f8f;font-family:'Poppins',Arial,sans-serif;margin:0 0 12px 0;font-size:22px;">Aviso de Fatura em Aberto</h2>
-              <p style="margin:0 0 16px 0;">Prezado(a) <strong>${lead.name}</strong>,</p>
+              <h2 style="color:#5b1f8f;font-family:'Poppins',Arial,sans-serif;margin:0 0 12px 0;font-size:22px;">Aviso de Fatura e Acordo — Vero Internet</h2>
+              <p style="margin:0 0 16px 0;">Prezado(a) <strong>${lead.name || 'Cliente'}</strong>,</p>
               <p style="margin:0 0 20px 0;">
-                Confirmamos o seu contato com a nossa agente virtual referente à pendência com a <strong>Vero Internet</strong>. Conforme solicitado, segue o código de barras para pagamento da sua fatura:
+                Confirmamos o seu contato com a nossa assistente virtual referente à sua fatura da <strong>Vero Internet</strong>. Conforme solicitado, seguem os dados para pagamento do seu débito:
               </p>
               <table width="100%" cellpadding="0" cellspacing="0" style="background:#FAF7F4;border-radius:8px;padding:16px 20px;margin-bottom:20px;">
-                <tr><td style="padding:6px 0;word-break:break-all;"><strong>Linha Digitável:</strong> ${lead.barcode}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Valor da Fatura:</strong> <span style="color:#5b1f8f;font-size:16px;font-weight:bold;">${valorFormatado}</span></td></tr>
-                <tr><td style="padding:6px 0;"><strong>Vencimento Original:</strong> ${lead.due_date || ''}</td></tr>
-                <tr><td style="padding:6px 0;"><strong>Dias em Atraso:</strong> ${lead.dias_atraso || 0} dias</td></tr>
+                ${barcodeBlock}
+                <tr><td style="padding:6px 0;"><strong>Valor:</strong> <span style="color:#5b1f8f;font-size:16px;font-weight:bold;">${valorFormatado}</span></td></tr>
+                <tr><td style="padding:6px 0;"><strong>Vencimento:</strong> ${lead.due_date || 'Até amanhã'}</td></tr>
+                ${lead.dias_atraso ? `<tr><td style="padding:6px 0;"><strong>Dias em Atraso:</strong> ${lead.dias_atraso} dias</td></tr>` : ''}
               </table>
               <div style="background:#FAF7F4;border-left:4px solid #5b1f8f;padding:20px;margin:24px 0;border-radius:6px;text-align:center;">
                 <h3 style="margin:0 0 12px 0;font-family:'Poppins',Arial,sans-serif;color:#1F1F1F;font-size:15px;">Copie a Linha Digitável acima e utilize o aplicativo do seu banco para efetuar o pagamento.</h3>
               </div>
               <p style="margin:20px 0 0 0;font-size:14px;color:#475467;">
-                Qualquer dúvida, nossa equipe está à disposição.<br>
+                Qualquer dúvida, nossa equipe está à disposição através do 10385.<br>
                 <strong>Equipe de Atendimento — Vero Internet</strong>
               </p>
             </td>
@@ -220,40 +239,26 @@ async function sendLocawebEmail(lead) {
   `;
 
   try {
-    console.log(`[Locaweb Email] Enviando e-mail para ${targetEmail}...`);
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-auth-token': token
-      },
-      body: JSON.stringify({
-        from: `${fromName} <${fromEmail}>`,
-        to: targetEmail,
-        subject: `Fatura em Aberto — Vero Internet`,
-        body: htmlBody,
-        headers: {
-          'content-type': 'text/html'
-        }
-      })
+    console.log(`[SMTP Email cPanel] Enviando e-mail de ${fromEmail} para ${targetEmail}...`);
+    const transporter = getSmtpTransporter();
+
+    const info = await transporter.sendMail({
+      from: `"${fromName}" <${fromEmail}>`,
+      to: targetEmail,
+      subject: `Fatura e Boleto de Acordo — Vero Internet`,
+      html: htmlBody
     });
 
-    const responseText = await response.text();
-
-    if (!response.ok) {
-      throw new Error(`Erro API Locaweb: ${response.status} - ${responseText}`);
-    }
-
-    console.log(`[Locaweb Email] E-mail enviado com sucesso para ${targetEmail}. Resposta: ${responseText}`);
+    console.log(`[SMTP Email cPanel] E-mail enviado com sucesso para ${targetEmail}. MessageID: ${info.messageId}`);
     return {
       success: true,
-      log: `[Locaweb Email] Enviado com sucesso.`
+      log: `[SMTP Email cPanel] Enviado com sucesso. ID: ${info.messageId}`
     };
   } catch (error) {
-    console.error(`[Locaweb Email ERROR] Falha ao enviar para lead #${lead.id}:`, error.message);
+    console.error(`[SMTP Email ERROR] Falha ao enviar para lead #${lead.id} (${targetEmail}):`, error.message);
     return {
       success: false,
-      log: `[Locaweb Email ERROR] Falha: ${error.message}`
+      log: `[SMTP Email ERROR] Falha: ${error.message}`
     };
   }
 }
@@ -562,5 +567,6 @@ module.exports = {
   triggerDdmShortSms,
   triggerUnipixSms,
   triggerSmartRcs,
-  sendLocawebEmail
+  sendCpanelSmtpEmail,
+  sendLocawebEmail: sendCpanelSmtpEmail
 };
