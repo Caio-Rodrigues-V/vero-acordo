@@ -1890,9 +1890,25 @@ app.post('/api/vapi-webhook', async (req, res) => {
         // Se foi PROMESSA ou ACORDO e o lead ainda não tem LinhaBoleto (barcode), conclui o acordo na API da Vero para gerar o boleto agora
         if (updatedLead && updatedLead.cpf && !updatedLead.barcode && (occurrence.includes('PROMESSA') || occurrence.includes('ACORDO'))) {
           try {
-            console.log(`[POST-CALL ACORDO] Gerando acordo/boleto automático na Vero para CPF ${updatedLead.cpf}...`);
+            console.log(`[POST-CALL ACORDO] Buscando ou gerando acordo/boleto na Vero para CPF ${updatedLead.cpf}...`);
             const veroAcordo = require('./services/veroAcordo.js');
-            const acordoData = await veroAcordo.fecharAcordoAVista(updatedLead.cpf);
+            let acordoData = await veroAcordo.fecharAcordoAVista(updatedLead.cpf).catch(() => null);
+
+            // Se fecharAcordoAVista der erro (ex: invalid_client porque já foi formalizado), busca via consultarAcordo
+            if (!acordoData || acordoData.error || (!acordoData.LinhaBoleto && !acordoData.linha_digitavel)) {
+              console.log(`[POST-CALL ACORDO] Tentando consultar acordo já existente para CPF ${updatedLead.cpf}...`);
+              const consultData = await veroAcordo.consultarAcordo(updatedLead.cpf).catch(() => null);
+              if (consultData && !consultData.error) {
+                const item = consultData.LinhaBoleto?.Item || consultData;
+                acordoData = {
+                  LinhaBoleto: item.Linha || item.LinhaBoleto || null,
+                  Vencimento: item.vencimento || item.Vencimento || null,
+                  valor: item.valor || null,
+                  Link: item.Link || null
+                };
+              }
+            }
+
             if (acordoData && !acordoData.error) {
               const returnedEmail = acordoData.email || null;
               const returnedBarcode = acordoData.LinhaBoleto || acordoData.linha_digitavel || null;
@@ -1906,7 +1922,7 @@ app.post('/api/vapi-webhook', async (req, res) => {
                  WHERE id = ?`,
                 [returnedEmail, returnedBarcode, returnedDue, leadId]
               );
-              console.log(`[POST-CALL ACORDO] Boleto gerado com sucesso: ${returnedBarcode} | Email: ${returnedEmail}`);
+              console.log(`[POST-CALL ACORDO] Dados do acordo obtidos com sucesso: Boleto="${returnedBarcode}" | Vencimento="${returnedDue}" | Email="${returnedEmail}"`);
               updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
             }
           } catch (acordoErr) {
