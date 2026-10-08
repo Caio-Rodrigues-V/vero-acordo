@@ -1885,8 +1885,36 @@ app.post('/api/vapi-webhook', async (req, res) => {
     // Se houve promessa de pagamento, acordo ou contato com CPC válido e ainda não disparou SMS/E-mail
     if (callStatus === 'completed' && (occurrence.includes('PROMESSA') || occurrence.includes('ACORDO') || occurrence.includes('2ª VIA') || validCpcOccurrences.includes(occurrence))) {
       try {
+        let updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
+        
+        // Se foi PROMESSA ou ACORDO e o lead ainda não tem LinhaBoleto (barcode), conclui o acordo na API da Vero para gerar o boleto agora
+        if (updatedLead && updatedLead.cpf && !updatedLead.barcode && (occurrence.includes('PROMESSA') || occurrence.includes('ACORDO'))) {
+          try {
+            console.log(`[POST-CALL ACORDO] Gerando acordo/boleto automático na Vero para CPF ${updatedLead.cpf}...`);
+            const veroAcordo = require('./services/veroAcordo.js');
+            const acordoData = await veroAcordo.fecharAcordoAVista(updatedLead.cpf);
+            if (acordoData && !acordoData.error) {
+              const returnedEmail = acordoData.email || null;
+              const returnedBarcode = acordoData.LinhaBoleto || acordoData.linha_digitavel || null;
+              const returnedDue = acordoData.Vencimento || null;
+              run(
+                `UPDATE leads SET 
+                   email = COALESCE(?, email), 
+                   barcode = COALESCE(?, barcode), 
+                   due_date = COALESCE(?, due_date),
+                   updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = ?`,
+                [returnedEmail, returnedBarcode, returnedDue, leadId]
+              );
+              console.log(`[POST-CALL ACORDO] Boleto gerado com sucesso: ${returnedBarcode} | Email: ${returnedEmail}`);
+              updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
+            }
+          } catch (acordoErr) {
+            console.error('[POST-CALL ACORDO ERROR]', acordoErr.message);
+          }
+        }
+
         const comm = require('./services/communication.js');
-        const updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
         if (updatedLead) {
           if (updatedLead.sms_status !== 'completed') {
             comm.dispatchSmsOrRcs(updatedLead).then(r => {
