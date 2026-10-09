@@ -8,10 +8,27 @@ const MINHA_VERO_APP_LINKS = [
 
 function buildPaymentMessage(lead, valorFormatado) {
   const cleanBarcode = String(lead.barcode || '').replace(/\D/g, '').trim();
-  if (cleanBarcode) {
-    return `${cleanBarcode}\nVero: fatura em aberto ${valorFormatado}.`;
+  const formattedBarcode = formatBarcodeForBoleto(lead.barcode || '');
+  const clientName = lead.name ? lead.name.trim() : 'Cliente';
+  const boletoLink = lead.boleto_url || lead.link || '';
+
+  if (cleanBarcode && cleanBarcode.length >= 36) {
+    let msg = `${cleanBarcode}\n\n`;
+    msg += `Vero: Olá ${clientName}, segue a Linha Digitável para pagamento da sua fatura em atraso no valor de ${valorFormatado}:\n\n`;
+    msg += `${formattedBarcode}\n\n`;
+    if (boletoLink) {
+      msg += `Acesse seu boleto online:\n${boletoLink}\n\n`;
+    }
+    msg += `Baixe o app Minha Vero:\n${MINHA_VERO_APP_LINKS}`;
+    return msg;
   }
-  return `Vero: obrigado por atender nosso contato. Em breve enviaremos mais informacoes sobre sua fatura.`;
+
+  let fallbackMsg = `Vero: Olá ${clientName}, identificamos fatura em aberto no valor de ${valorFormatado}.\n\n`;
+  if (boletoLink) {
+    fallbackMsg += `Acesse seu boleto online:\n${boletoLink}\n\n`;
+  }
+  fallbackMsg += `Baixe o app Minha Vero:\n${MINHA_VERO_APP_LINKS}`;
+  return fallbackMsg;
 }
 
 function limitSmsMessage(text) {
@@ -285,7 +302,8 @@ async function sendCpanelSmtpEmail(lead) {
  * @returns {Promise<string|null>}
  */
 async function ensureLeadBarcode(lead) {
-  if (lead.barcode && String(lead.barcode).replace(/\D/g, '').length >= 30) {
+  const digitsOnly = String(lead.barcode || '').replace(/\D/g, '');
+  if (digitsOnly.length >= 36) {
     return String(lead.barcode).trim();
   }
 
@@ -295,10 +313,11 @@ async function ensureLeadBarcode(lead) {
 
   try {
     const veroAcordo = require('./veroAcordo.js');
-    console.log(`[RCS ENRICH] Lead #${lead.id} sem linha digitável. Buscando boleto na Vero para CPF ${lead.cpf}...`);
+    console.log(`[RCS ENRICH] Lead #${lead.id} sem linha digitável válida de 47 dígitos (atualmente: "${lead.barcode || 'vazio'}"). Buscando na Vero para CPF ${lead.cpf}...`);
 
     let barcode = null;
     let dueDate = null;
+    let boletoUrl = null;
 
     // 1. Tentar consultar acordo já formalizado na Vero
     try {
@@ -307,22 +326,24 @@ async function ensureLeadBarcode(lead) {
         const item = consult.LinhaBoleto?.Item || consult;
         barcode = item.Linha || item.LinhaBoleto || item.linha_digitavel || null;
         dueDate = item.vencimento || item.Vencimento || null;
+        boletoUrl = item.Link || consult.Link || null;
       }
     } catch (e) {}
 
     // 2. Se não encontrou acordo prévio, tenta gerar acordo à vista na Vero
-    if (!barcode) {
+    if (!barcode || String(barcode).replace(/\D/g, '').length < 36) {
       try {
         const acordo = await veroAcordo.fecharAcordoAVista(lead.cpf);
         if (acordo && !acordo.error) {
           barcode = acordo.LinhaBoleto || acordo.linha_digitavel || null;
           dueDate = acordo.Vencimento || null;
+          boletoUrl = acordo.Link || null;
         }
       } catch (e) {}
     }
 
     // 3. Se ainda não tem, checar nas faturas do cliente no /check
-    if (!barcode) {
+    if (!barcode || String(barcode).replace(/\D/g, '').length < 36) {
       try {
         const check = await veroAcordo.checkCliente(lead.cpf);
         const cli = check?.cliente || check?.dados || check;
@@ -331,27 +352,30 @@ async function ensureLeadBarcode(lead) {
             const f = cli.faturas[0];
             barcode = f.linha_digitavel || f.linha || f.codigo_barras || f.barcode || null;
             dueDate = f.vencimento || null;
+            boletoUrl = f.link || f.link_boleto || f.url || null;
           } else if (Array.isArray(cli.contratos) && cli.contratos.length > 0) {
             const c = cli.contratos[0];
             barcode = c.linha_digitavel || c.linha || c.codigo_barras || c.barcode || null;
             dueDate = c.vencimento || null;
+            boletoUrl = c.link || null;
           }
         }
       } catch (e) {}
     }
 
-    if (barcode) {
+    if (barcode && String(barcode).replace(/\D/g, '').length >= 36) {
       const cleanBarcode = String(barcode).trim();
       lead.barcode = cleanBarcode;
       if (dueDate && !lead.due_date) lead.due_date = dueDate;
+      if (boletoUrl && !lead.boleto_url) lead.boleto_url = boletoUrl;
 
       try {
         const { run } = require('../db.js');
         run(
-          `UPDATE leads SET barcode = ?, due_date = COALESCE(?, due_date), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-          [cleanBarcode, dueDate, lead.id]
+          `UPDATE leads SET barcode = ?, due_date = COALESCE(?, due_date), boleto_url = COALESCE(?, boleto_url), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [cleanBarcode, dueDate, boletoUrl, lead.id]
         );
-        console.log(`[RCS ENRICH SUCESSO] Linha digitável obtida na Vero para Lead #${lead.id}: ${cleanBarcode}`);
+        console.log(`[RCS ENRICH SUCESSO] Linha digitável válida obtida na Vero para Lead #${lead.id}: ${cleanBarcode}`);
       } catch (dbErr) {}
 
       return cleanBarcode;

@@ -135,6 +135,7 @@ function initDb() {
   safeAddColumn('leads', 'recording_url TEXT');
   safeAddColumn('leads', 'created_at DATETIME');
   safeAddColumn('leads', 'updated_at DATETIME');
+  safeAddColumn('leads', 'boleto_url TEXT');
 
   // 3. Criar Índices de Alta Performance para leitura instantânea de centenas de milhares de leads
   try {
