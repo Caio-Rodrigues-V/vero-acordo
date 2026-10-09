@@ -486,5 +486,6 @@ async function syncMissingVapiRecordings(campaignId = null) {
 module.exports = { 
   makeVapiCall, 
   fetchVapiCallDetails, 
-  syncMissingVapiRecordings 
+  syncMissingVapiRecordings,
+  numberToWordsBRL
 };

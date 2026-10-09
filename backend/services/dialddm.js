@@ -5,6 +5,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env') });
 dotenv.config();
 
 const { get, run } = require('../db.js');
+const { numberToWordsBRL } = require('./vapi.js');
 
 /**
  * Normaliza o telefone para formato E.164 (+55...)
@@ -147,11 +148,25 @@ async function makeDialDdmCall(lead) {
   const appBaseUrl = process.env.APP_BASE_URL || 'https://veroacordo.grupoddm.ia.br';
   const webhookUrl = `${appBaseUrl}/api/vapi-webhook`;
 
-  // Normalizar valor formatado para a fala da IA (ex: 150,90)
+  // Normalizar valor formatado para a fala fluida e natural da IA
+  // Passando o valor por extenso (ex: "duzentos e trinta e sete reais e noventa e dois centavos")
+  // Isso impede que a ElevenLabs sofra quebras de tom, robótica ou chiado nas frequências ao sintetizar números.
   let formattedDebt = debtValue ? String(debtValue).trim() : '0,00';
-  if (/^\d+(\.\d+)?$/.test(formattedDebt)) {
-    const num = parseFloat(formattedDebt);
-    formattedDebt = num.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let spokenDebt = formattedDebt;
+  const rawNumDebt = parseFloat(String(formattedDebt).replace(/\./g, '').replace(',', '.'));
+  if (!isNaN(rawNumDebt) && rawNumDebt > 0) {
+    formattedDebt = rawNumDebt.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    spokenDebt = numberToWordsBRL(rawNumDebt);
+  }
+
+  let formattedDiscount = discountValue || '';
+  let spokenDiscount = formattedDiscount;
+  if (discountValue) {
+    const rawNumDisc = parseFloat(String(discountValue).replace(/\./g, '').replace(',', '.'));
+    if (!isNaN(rawNumDisc) && rawNumDisc > 0) {
+      formattedDiscount = rawNumDisc.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      spokenDiscount = numberToWordsBRL(rawNumDisc);
+    }
   }
 
   // Variáveis dinâmicas para o prompt da IA do Dialog DDM (compatível com {{cliente.contratos[0].valor_total}} e {{cliente.primeiro_nome}})
@@ -164,10 +179,12 @@ async function makeDialDdmCall(lead) {
     telefone: lead.phone || '',
     cpf: lead.cpf || '',
     email: lead.email || '',
-    valor: formattedDebt,
-    valor_atualizado: formattedDebt,
-    valor_original: formattedDebt,
-    valor_com_desconto: discountValue || formattedDebt,
+    valor: spokenDebt,
+    valor_atualizado: spokenDebt,
+    valor_original: spokenDebt,
+    valor_com_desconto: spokenDiscount || spokenDebt,
+    valor_numerico: formattedDebt,
+    valor_desconto_numerico: formattedDiscount,
     tem_desconto: hasDiscount ? 'sim' : 'nao',
     // Estrutura aninhada exigida pelo Prompt do Assistente 12
     cliente: {
@@ -175,16 +192,17 @@ async function makeDialDdmCall(lead) {
       nome: fullName,
       contratos: [
         {
-          valor_total: formattedDebt,
-          valor: formattedDebt
+          valor_total: spokenDebt,
+          valor: spokenDebt,
+          valor_numerico: formattedDebt
         }
       ]
     },
     // Chaves literais caso o template engine do Dialog DDM acesse por string plana
     "cliente.primeiro_nome": firstName,
     "cliente.nome": fullName,
-    "cliente.contratos[0].valor_total": formattedDebt,
-    "cliente.contratos[0].valor": formattedDebt
+    "cliente.contratos[0].valor_total": spokenDebt,
+    "cliente.contratos[0].valor": spokenDebt
   };
 
   if (lead.due_date) variableValues.vencimento = String(lead.due_date);
@@ -199,7 +217,8 @@ async function makeDialDdmCall(lead) {
     },
     metadata: {
       lead_id: lead.id,
-      campaign_id: lead.campaign_id
+      campaign_id: lead.campaign_id,
+      debt_numeric: formattedDebt
     },
     serverUrl: webhookUrl,
     maxConcurrency: maxConcurrency,
@@ -208,9 +227,9 @@ async function makeDialDdmCall(lead) {
       voice: {
         provider: 'elevenlabs',
         voiceId: 'PznTnBc8X6pvixs9UkQm',
-        model: 'eleven_turbo_v2_5',
-        stability: 0.65,
-        similarityBoost: 0.75,
+        model: 'eleven_multilingual_v2',
+        stability: 0.70,
+        similarityBoost: 0.80,
         fillerInjectionEnabled: false,
         backchannelingEnabled: false
       },
