@@ -849,27 +849,28 @@ app.post('/api/campaigns/:id/resync-vapi', async (req, res) => {
           const funcName = m.toolCalls?.[0]?.function?.name || m.name || '';
           return String(funcName).toLowerCase().includes('sms');
         });
-        const shouldSendSms = callStatus === 'completed';
-        const smsReason = validCpcOccurrences.includes(occurrence) || (isAffirmativeCpc && customerSpeech.trim().length > 0) || hasSmsToolCallInMessages
-          ? 'confirmação/CPC'
-          : 'chamada atendida';
+        const isAgreement = occurrence.includes('PROMESSA') || occurrence.includes('ACORDO');
+        const shouldSendSms = callStatus === 'completed' && isAgreement;
+        const smsReason = 'acordo formalizado/promessa de pagamento';
 
         if (shouldSendSms && sendMessages) {
           const lead = get('SELECT * FROM leads WHERE id = ?', [targetLead.id]);
           if (lead && lead.sms_status !== 'completed') {
-            console.log(`[SMS TRIGGER] Disparando SMS para Lead #${targetLead.id} (${lead.phone}) por ${smsReason}...`);
+            console.log(`[RCS TRIGGER] Disparando RCS para Lead #${targetLead.id} (${lead.phone}) por ${smsReason}...`);
             const { triggerN8NSmsWebhook } = require('./services/communication.js');
             triggerN8NSmsWebhook(lead)
               .then(smsResult => {
                 const smsStatus = smsResult.success ? 'completed' : 'failed';
-                const smsLog = smsResult.success ? `[SMS] Enviado com sucesso via n8n/Unipix.` : smsResult.log;
+                const smsLog = smsResult.success ? `[Smart RCS] Enviado com sucesso.` : smsResult.log;
                 run('UPDATE leads SET sms_status = ?, sms_log = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [smsStatus, smsLog, targetLead.id]);
                 updateCampaignStats(campaignId);
               })
-              .catch(err => console.error('[SMS TRIGGER ERROR]', err.message));
+              .catch(err => console.error('[RCS TRIGGER ERROR]', err.message));
           }
         } else if (!shouldSendSms) {
-          const cancelReason = 'Cancelado: Ligação não atendida.';
+          const cancelReason = callStatus === 'completed'
+            ? 'Cancelado: Chamada atendida sem formalização de acordo.'
+            : 'Cancelado: Ligação não atendida.';
 
           run(
             `UPDATE leads
@@ -1882,8 +1883,9 @@ app.post('/api/vapi-webhook', async (req, res) => {
     // Recalcular as estatísticas totais da campanha no banco usando a função centralizada
     updateCampaignStats(campaignId);
 
-    // Se houve promessa de pagamento, acordo ou contato com CPC válido e ainda não disparou SMS/E-mail
-    if (callStatus === 'completed' && (occurrence.includes('PROMESSA') || occurrence.includes('ACORDO') || occurrence.includes('2ª VIA') || validCpcOccurrences.includes(occurrence))) {
+    // Disparar RCS e E-mail EXCLUSIVAMENTE para quem formalizou acordo ou promessa de pagamento
+    const isAgreement = occurrence.includes('PROMESSA') || occurrence.includes('ACORDO');
+    if (callStatus === 'completed' && isAgreement) {
       try {
         let updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
         
@@ -1904,7 +1906,7 @@ app.post('/api/vapi-webhook', async (req, res) => {
                   LinhaBoleto: item.Linha || item.LinhaBoleto || null,
                   Vencimento: item.vencimento || item.Vencimento || null,
                   valor: item.valor || null,
-                  Link: item.Link || null
+                  Link: item.Link || consultData.Link || null
                 };
               }
             }
@@ -1913,16 +1915,18 @@ app.post('/api/vapi-webhook', async (req, res) => {
               const returnedEmail = acordoData.email || null;
               const returnedBarcode = acordoData.LinhaBoleto || acordoData.linha_digitavel || null;
               const returnedDue = acordoData.Vencimento || null;
+              const returnedLink = acordoData.Link || null;
               run(
                 `UPDATE leads SET 
                    email = COALESCE(?, email), 
                    barcode = COALESCE(?, barcode), 
                    due_date = COALESCE(?, due_date),
+                   boleto_url = COALESCE(?, boleto_url),
                    updated_at = CURRENT_TIMESTAMP 
                  WHERE id = ?`,
-                [returnedEmail, returnedBarcode, returnedDue, leadId]
+                [returnedEmail, returnedBarcode, returnedDue, returnedLink, leadId]
               );
-              console.log(`[POST-CALL ACORDO] Dados do acordo obtidos com sucesso: Boleto="${returnedBarcode}" | Vencimento="${returnedDue}" | Email="${returnedEmail}"`);
+              console.log(`[POST-CALL ACORDO] Dados do acordo obtidos com sucesso: Boleto="${returnedBarcode}" | Vencimento="${returnedDue}" | Email="${returnedEmail}" | Link="${returnedLink}"`);
               updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
             }
           } catch (acordoErr) {
@@ -1948,6 +1952,12 @@ app.post('/api/vapi-webhook', async (req, res) => {
       } catch (postDispatchErr) {
         console.error('[POST-CALL DISPATCH ERROR]', postDispatchErr.message);
       }
+    } else if (callStatus === 'completed' && !isAgreement) {
+      console.log(`[POST-CALL SKIP] Lead #${leadId} atendeu mas ocorrência "${occurrence}" não é formalização de acordo. Disparo de RCS cancelado.`);
+      run(
+        `UPDATE leads SET sms_status = 'failed', sms_log = 'Cancelado: Chamada atendida sem formalização de acordo.', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND (sms_status IS NULL OR sms_status = 'pending')`,
+        [leadId]
+      );
     }
 
     res.json({ success: true, message: 'Webhook processado com sucesso.' });

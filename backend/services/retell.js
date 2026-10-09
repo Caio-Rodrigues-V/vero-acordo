@@ -170,10 +170,11 @@ async function handleRetellWebhook(eventData) {
       [finalCallStatus, durationSeconds, transcript, occurrenceText, recordingUrl, lead.id]
     );
 
-    // Nova regra: se a chamada foi atendida, envia SMS mesmo sem CPC.
-    if (finalCallStatus === 'completed') {
-      console.log('[RETELL WEBHOOK] Processando envio de SMS para Lead #' + lead.id + ' por chamada atendida...');
-      const smsResult = await triggerN8NSmsWebhook(lead).catch(err => ({ success: false, log: '[RETELL SMS ERROR] ' + err.message }));
+    // Regra estrita: só envia RCS/SMS se houve formalização de acordo ou promessa de pagamento
+    const isAgreement = occurrenceText.includes('PROMESSA') || occurrenceText.includes('ACORDO');
+    if (finalCallStatus === 'completed' && isAgreement) {
+      console.log('[RETELL WEBHOOK] Processando envio de RCS para Lead #' + lead.id + ' por acordo formalizado...');
+      const smsResult = await triggerN8NSmsWebhook(lead).catch(err => ({ success: false, log: '[RETELL RCS ERROR] ' + err.message }));
       const smsStatus = smsResult.success ? 'completed' : 'failed';
       run(
         'UPDATE leads SET sms_status = ?, sms_log = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
