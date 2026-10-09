@@ -1887,8 +1887,8 @@ app.post('/api/vapi-webhook', async (req, res) => {
       try {
         let updatedLead = get('SELECT * FROM leads WHERE id = ?', [leadId]);
         
-        // Se foi PROMESSA ou ACORDO e o lead ainda não tem LinhaBoleto (barcode), conclui o acordo na API da Vero para gerar o boleto agora
-        if (updatedLead && updatedLead.cpf && !updatedLead.barcode && (occurrence.includes('PROMESSA') || occurrence.includes('ACORDO'))) {
+        // Se o lead ainda não tem LinhaBoleto (barcode), busca ou conclui o acordo na API da Vero para gerar o boleto agora
+        if (updatedLead && updatedLead.cpf && !updatedLead.barcode) {
           try {
             console.log(`[POST-CALL ACORDO] Buscando ou gerando acordo/boleto na Vero para CPF ${updatedLead.cpf}...`);
             const veroAcordo = require('./services/veroAcordo.js');

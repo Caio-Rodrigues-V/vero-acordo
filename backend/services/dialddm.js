@@ -98,35 +98,45 @@ async function makeDialDdmCall(lead) {
             shortName = firstName;
           }
 
-          // Procurar valor do contrato em múltiplos formatos possíveis
+          // Procurar valor do contrato e linha digitável em múltiplos formatos possíveis
           let foundValue = null;
+          let foundBarcode = null;
 
           if (Array.isArray(clienteObj.contratos) && clienteObj.contratos.length > 0) {
             const c0 = clienteObj.contratos[0];
             foundValue = c0.valor_total || c0.valor || c0.total || c0.saldo || c0.debito || c0.valor_aberto;
+            foundBarcode = c0.linha_digitavel || c0.linha || c0.codigo_barras || c0.barcode || null;
           } else if (Array.isArray(clienteObj.faturas) && clienteObj.faturas.length > 0) {
             const f0 = clienteObj.faturas[0];
             foundValue = f0.valor || f0.valor_total || f0.saldo;
+            foundBarcode = f0.linha_digitavel || f0.linha || f0.codigo_barras || f0.barcode || null;
           }
 
           if (!foundValue) {
             foundValue = clienteObj.valor_total || clienteObj.valor || clienteObj.saldo_devedor || clienteObj.debito_total || clienteObj.total;
+          }
+          if (!foundBarcode) {
+            foundBarcode = clienteObj.linha_digitavel || clienteObj.linha || clienteObj.codigo_barras || clienteObj.barcode || null;
           }
 
           if (foundValue !== null && foundValue !== undefined) {
             debtValue = String(foundValue).replace(/\s/g, '');
           }
 
+          if (foundBarcode && !lead.barcode) {
+            lead.barcode = String(foundBarcode).trim();
+          }
+
           // Atualizar o banco de dados com os dados oficiais retornados pela API
           try {
             const numValue = parseFloat(String(debtValue).replace(/\./g, '').replace(',', '.')) || null;
             run(
-              `UPDATE leads SET debt_value = COALESCE(?, debt_value), name = COALESCE(?, name), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-              [numValue, fullName, lead.id]
+              `UPDATE leads SET debt_value = COALESCE(?, debt_value), name = COALESCE(?, name), barcode = COALESCE(?, barcode), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+              [numValue, fullName, foundBarcode, lead.id]
             );
           } catch (dbErr) {}
 
-          console.log(`[DIAL DDM PRE-CHECK SUCESSO] Lead #${lead.id} atualizado: Nome="${firstName}", Débito=R$ ${debtValue}`);
+          console.log(`[DIAL DDM PRE-CHECK SUCESSO] Lead #${lead.id} atualizado: Nome="${firstName}", Débito=R$ ${debtValue}, Boleto="${foundBarcode || 'N/A'}"`);
         }
       }
 

@@ -278,6 +278,92 @@ async function sendCpanelSmtpEmail(lead) {
 }
 
 /**
+ * Garante que o lead possua uma linha digitável (barcode) antes de enviar RCS.
+ * Se o lead não tiver barcode mas tiver CPF, consulta/formaliza na API da Vero em tempo real.
+ *
+ * @param {object} lead 
+ * @returns {Promise<string|null>}
+ */
+async function ensureLeadBarcode(lead) {
+  if (lead.barcode && String(lead.barcode).replace(/\D/g, '').length >= 30) {
+    return String(lead.barcode).trim();
+  }
+
+  if (!lead.cpf) {
+    return null;
+  }
+
+  try {
+    const veroAcordo = require('./veroAcordo.js');
+    console.log(`[RCS ENRICH] Lead #${lead.id} sem linha digitável. Buscando boleto na Vero para CPF ${lead.cpf}...`);
+
+    let barcode = null;
+    let dueDate = null;
+
+    // 1. Tentar consultar acordo já formalizado na Vero
+    try {
+      const consult = await veroAcordo.consultarAcordo(lead.cpf);
+      if (consult && !consult.error) {
+        const item = consult.LinhaBoleto?.Item || consult;
+        barcode = item.Linha || item.LinhaBoleto || item.linha_digitavel || null;
+        dueDate = item.vencimento || item.Vencimento || null;
+      }
+    } catch (e) {}
+
+    // 2. Se não encontrou acordo prévio, tenta gerar acordo à vista na Vero
+    if (!barcode) {
+      try {
+        const acordo = await veroAcordo.fecharAcordoAVista(lead.cpf);
+        if (acordo && !acordo.error) {
+          barcode = acordo.LinhaBoleto || acordo.linha_digitavel || null;
+          dueDate = acordo.Vencimento || null;
+        }
+      } catch (e) {}
+    }
+
+    // 3. Se ainda não tem, checar nas faturas do cliente no /check
+    if (!barcode) {
+      try {
+        const check = await veroAcordo.checkCliente(lead.cpf);
+        const cli = check?.cliente || check?.dados || check;
+        if (cli) {
+          if (Array.isArray(cli.faturas) && cli.faturas.length > 0) {
+            const f = cli.faturas[0];
+            barcode = f.linha_digitavel || f.linha || f.codigo_barras || f.barcode || null;
+            dueDate = f.vencimento || null;
+          } else if (Array.isArray(cli.contratos) && cli.contratos.length > 0) {
+            const c = cli.contratos[0];
+            barcode = c.linha_digitavel || c.linha || c.codigo_barras || c.barcode || null;
+            dueDate = c.vencimento || null;
+          }
+        }
+      } catch (e) {}
+    }
+
+    if (barcode) {
+      const cleanBarcode = String(barcode).trim();
+      lead.barcode = cleanBarcode;
+      if (dueDate && !lead.due_date) lead.due_date = dueDate;
+
+      try {
+        const { run } = require('../db.js');
+        run(
+          `UPDATE leads SET barcode = ?, due_date = COALESCE(?, due_date), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [cleanBarcode, dueDate, lead.id]
+        );
+        console.log(`[RCS ENRICH SUCESSO] Linha digitável obtida na Vero para Lead #${lead.id}: ${cleanBarcode}`);
+      } catch (dbErr) {}
+
+      return cleanBarcode;
+    }
+  } catch (err) {
+    console.error(`[RCS ENRICH ERROR] Falha ao enriquecer boleto para Lead #${lead.id}:`, err.message);
+  }
+
+  return null;
+}
+
+/**
  * Dispara a mensagem Smart RCS usando a API da Smart RCS.
  * 
  * @param {object} lead - O objeto do lead
@@ -300,15 +386,18 @@ async function triggerSmartRcs(lead) {
     cleanedPhone = '55' + cleanedPhone;
   }
 
+  // Assegurar que temos a linha digitável do boleto antes de disparar
+  await ensureLeadBarcode(lead);
+
   if (!lead.barcode) {
-    console.log(`[SMS] Lead #${lead.id} não possui linha digitável. Abortando envio.`);
+    console.log(`[RCS ABORT] Lead #${lead.id} não possui linha digitável na Vero. Abortando envio para evitar mensagem sem boleto.`);
     return {
       success: false,
-      log: 'Cancelado: Lead não possui linha digitável.'
+      log: 'Cancelado: Não foi possível obter linha digitável/boleto na Vero.'
     };
   }
 
-  const valorFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(lead.debt_value);
+  const valorFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(lead.debt_value || 0);
   const messageText = buildPaymentMessage(lead, valorFormatado);
 
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -558,21 +647,10 @@ async function triggerDdmShortSms(lead) {
 }
 
 /**
- * Roteador de mensagens SMS/RCS: Prioriza Smart RCS (com fallback SMS automático de operadora).
- * Se a API Smart RCS falhar ou estiver inacessível, recorre à API DDM enviaShort.
+ * Roteador de mensagens RCS: Utiliza exclusivamente a API Smart RCS.
  */
 async function dispatchSmsOrRcs(lead) {
-  try {
-    const rcsRes = await triggerSmartRcs(lead);
-    if (rcsRes && rcsRes.success) {
-      return rcsRes;
-    }
-    console.warn(`[DISPATCH FALLBACK] Smart RCS não confirmou envio para lead #${lead.id} (${rcsRes?.log}). Tentando via DDM Short SMS...`);
-  } catch (err) {
-    console.warn(`[DISPATCH FALLBACK] Falha ao disparar Smart RCS: ${err.message}. Tentando via DDM Short SMS...`);
-  }
-
-  return await enqueueDdmSms(lead);
+  return await triggerSmartRcs(lead);
 }
 
 module.exports = { 
